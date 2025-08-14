@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: edtech-backend
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn --chdir edtech edtech.wsgi:application"
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "*"
+      - key: DB_ENGINE
+        value: "django.db.backends.postgresql"
+      - key: FRONTEND_URL
+        value: "https://your-netlify-app.netlify.app"
+      # Supabase Database Credentials
+      - key: DB_NAME
+        value: "postgres"
+      - key: DB_USER
+        value: "postgres.dcjdmvuxmnwquvlsrqwi"
+      - key: DB_PASSWORD
+        value: "root"
+      - key: DB_HOST
+        value: "aws-0-ap-south-1.pooler.supabase.com"
+      - key: DB_PORT
+        value: "5432"
+      # Legacy Postgres variables (for compatibility)
+      - key: POSTGRES_DB
+        value: "postgres"
+      - key: POSTGRES_USER
+        value: "postgres.dcjdmvuxmnwquvlsrqwi"
+      - key: POSTGRES_PASSWORD
+        value: "root"
+      - key: POSTGRES_HOST
+        value: "aws-0-ap-south-1.pooler.supabase.com"
+      - key: POSTGRES_PORT
+        value: "5432"
+      # Supabase API credentials (if needed for file storage)
+      - key: SUPABASE_URL
+        value: "https://dcjdmvuxmnwquvlsrqwi.supabase.co"
+      - key: SUPABASE_SERVICE_ROLE
+        value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjamRtdnV4bW53cXV2bHNycXdpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTA5MDI0NiwiZXhwIjoyMDcwNjY2MjQ2fQ.dVEh5D22HCzqEiyNGOjtjq6jvLa9TL1IRMpOuHexkt0"
+      - key: SUPABASE_BUCKET
+        value: "courses"
+

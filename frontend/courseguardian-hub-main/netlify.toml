@@ -1,0 +1,31 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Environment variables for production (with backend)
+[context.production.environment]
+  VITE_API_BASE_URL = "https://your-render-app.onrender.com/api"
+  VITE_DEMO_MODE = "false"
+
+# Environment variables for demo mode (no backend)
+[context.demo.environment]
+  VITE_API_BASE_URL = ""
+  VITE_DEMO_MODE = "true"
+
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Headers for assets
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

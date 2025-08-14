@@ -1,0 +1,101 @@
+
+from django.contrib import admin
+from django.contrib.auth.models import User
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from .models import PDFDocument, Course, Lesson, LessonPDF
+from .enrollment import Enrollment
+from .profile import Profile
+
+# Custom User Profile Inline
+class ProfileInline(admin.StackedInline):
+    model = Profile
+    can_delete = False
+    verbose_name_plural = 'Profile'
+    fields = ('role',)
+
+# Enhanced User Admin
+class UserAdmin(BaseUserAdmin):
+    inlines = (ProfileInline,)
+    list_display = BaseUserAdmin.list_display + ('get_role',)
+    list_filter = BaseUserAdmin.list_filter + ('profile__role',)
+    
+    def get_role(self, obj):
+        return obj.profile.role if hasattr(obj, 'profile') else 'No Profile'
+    get_role.short_description = 'Role'
+
+# Enhanced Course Admin
+class LessonInline(admin.TabularInline):
+    model = Lesson
+    extra = 1
+    fields = ('title', 'created_at')
+    readonly_fields = ('created_at',)
+
+class CourseAdmin(admin.ModelAdmin):
+    list_display = ('title', 'lesson_count', 'enrollment_count')
+    search_fields = ('title',)
+    inlines = [LessonInline]
+    
+    def lesson_count(self, obj):
+        return obj.lessons.count()
+    lesson_count.short_description = 'Lessons'
+    
+    def enrollment_count(self, obj):
+        return Enrollment.objects.filter(course=obj).count()
+    enrollment_count.short_description = 'Enrollments'
+
+# Enhanced Lesson Admin with PDF management
+class LessonPDFInline(admin.TabularInline):
+    model = LessonPDF
+    extra = 1
+    fields = ('title', 'pdf_file', 'uploaded_at')
+    readonly_fields = ('uploaded_at',)
+
+class LessonAdmin(admin.ModelAdmin):
+    list_display = ('title', 'course', 'pdf_count', 'created_at')
+    list_filter = ('course', 'created_at')
+    search_fields = ('title', 'course__title')
+    inlines = [LessonPDFInline]
+    
+    def pdf_count(self, obj):
+        return obj.pdfs.count()
+    pdf_count.short_description = 'PDFs'
+
+# Enhanced LessonPDF Admin
+class LessonPDFAdmin(admin.ModelAdmin):
+    list_display = ('title', 'lesson', 'get_course', 'uploaded_at')
+    list_filter = ('lesson__course', 'uploaded_at')
+    search_fields = ('title', 'lesson__title', 'lesson__course__title')
+    
+    def get_course(self, obj):
+        return obj.lesson.course.title
+    get_course.short_description = 'Course'
+
+# Enhanced Enrollment Admin
+class EnrollmentAdmin(admin.ModelAdmin):
+    list_display = ('user', 'course', 'enrolled_at')
+    list_filter = ('course', 'enrolled_at')
+    search_fields = ('user__username', 'user__email', 'course__title')
+    date_hierarchy = 'enrolled_at'
+
+# Enhanced PDFDocument Admin
+class PDFDocumentAdmin(admin.ModelAdmin):
+    list_display = ('title', 'uploaded_at')
+    list_filter = ('uploaded_at',)
+    search_fields = ('title',)
+
+# Re-register User with enhanced admin
+admin.site.unregister(User)
+admin.site.register(User, UserAdmin)
+
+# Register all models with enhanced admin
+admin.site.register(Profile)
+admin.site.register(PDFDocument, PDFDocumentAdmin)
+admin.site.register(Course, CourseAdmin)
+admin.site.register(Lesson, LessonAdmin)
+admin.site.register(LessonPDF, LessonPDFAdmin)
+admin.site.register(Enrollment, EnrollmentAdmin)
+
+# Customize admin site headers
+admin.site.site_header = "CourseGuardian Admin Panel"
+admin.site.site_title = "CourseGuardian Admin"
+admin.site.index_title = "Welcome to CourseGuardian Administration"
