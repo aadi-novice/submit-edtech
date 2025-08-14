@@ -12,7 +12,7 @@ services:
       - key: DJANGO_DEBUG
         value: "False"
       - key: DJANGO_ALLOWED_HOSTS
-        value: "*"
+        value: ".onrender.com"
       - key: DB_ENGINE
         value: "django.db.backends.postgresql"
       - key: FRONTEND_URL
