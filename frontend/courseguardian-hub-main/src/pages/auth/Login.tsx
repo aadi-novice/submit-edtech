@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { EyeIcon, EyeOffIcon, GraduationCap } from 'lucide-react';
+import { EyeIcon, EyeOffIcon, GraduationCap, Shield } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -28,7 +28,7 @@ const Login: React.FC = () => {
     const newErrors: { username?: string; password?: string } = {};
     
     if (!username) {
-      newErrors.username = 'Username is required';
+      newErrors.username = 'Email or username is required';
     }
     
     if (!password) {
@@ -51,8 +51,14 @@ const Login: React.FC = () => {
     setLoading(false);
 
     if (!success) {
-      setErrors({ password: 'Invalid username or password' });
+      setErrors({ password: 'Invalid credentials. Please check your email/username and password.' });
     }
+  };
+
+  const handleAdminLogin = () => {
+    // Redirect to Django admin login page
+    const adminUrl = import.meta.env.VITE_DJANGO_ADMIN_URL || 'http://localhost:8000/admin';
+    window.open(adminUrl, '_blank');
   };
 
   return (
@@ -76,11 +82,11 @@ const Login: React.FC = () => {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="username">Email or Username</Label>
                 <Input
                   id="username"
                   type="text"
-                  placeholder="Enter your username"
+                  placeholder="Enter your email or username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className={errors.username ? 'border-destructive' : ''}
@@ -133,6 +139,26 @@ const Login: React.FC = () => {
                 disabled={loading}
               >
                 {loading ? 'Signing In...' : 'Sign In'}
+              </Button>
+
+              {/* Admin Login Button */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">Or</span>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-11"
+                onClick={handleAdminLogin}
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                Admin Login (Django)
               </Button>
             </form>
 

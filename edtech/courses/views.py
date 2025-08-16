@@ -2,18 +2,22 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from django.contrib.auth.models import User
 from rest_framework.views import APIView
-from rest_framework.serializers import ModelSerializer, CharField, EmailField
+from rest_framework.serializers import ModelSerializer, CharField, EmailField, SerializerMethodField
 from .profile import Profile
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import render
 from rest_framework.decorators import api_view, permission_classes
-
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from .models import Lesson
-from .storage import signed_url
-from django.http import HttpResponse
+from .storage import signed_url, verify_pdf_access
+from django.http import HttpResponse, Http404, FileResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+import os
+import mimetypes
+from django.http import StreamingHttpResponse
 
 
 
@@ -107,12 +111,12 @@ class UserMeView(APIView):
 class UserSerializer(ModelSerializer):
     firstName = CharField(source='first_name', read_only=True)
     lastName = CharField(source='last_name', read_only=True)
-    role = CharField(read_only=True)
+    role = SerializerMethodField()
     createdAt = CharField(source='date_joined', read_only=True)
     
     class Meta:
         model = User
-        fields = ('id', 'email', 'firstName', 'lastName', 'role', 'createdAt')
+        fields = ('id', 'username', 'email', 'firstName', 'lastName', 'role', 'createdAt')
     
     def get_role(self, obj):
         """Get user role from profile, default to 'student' if no profile exists"""
@@ -120,12 +124,6 @@ class UserSerializer(ModelSerializer):
             return obj.profile.role
         except:
             return 'student'
-    
-    def to_representation(self, instance):
-        """Override to handle profile.role safely"""
-        data = super().to_representation(instance)
-        data['role'] = self.get_role(instance)
-        return data
 
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
@@ -136,6 +134,258 @@ class CurrentUserView(APIView):
 
 def home(request):
     return HttpResponse("Hello from Courses App!")
+
+@csrf_exempt
+def debug_pdf_access(request):
+    """Debug endpoint to test PDF file access"""
+    from django.conf import settings
+    from .storage import generate_secure_pdf_url
+    import os
+    
+    path = 'lesson_pdfs/_Personalized_Weekly_Gym_Plan_with_Weight_Targets.pdf'
+    
+    # Check different possible paths
+    paths_to_check = [
+        os.path.join(settings.BASE_DIR, path),
+        os.path.join(getattr(settings, 'MEDIA_ROOT', ''), path),
+        os.path.join(settings.BASE_DIR, 'media', path),
+    ]
+    
+    result = []
+    result.append(f"BASE_DIR: {settings.BASE_DIR}")
+    result.append(f"MEDIA_ROOT: {getattr(settings, 'MEDIA_ROOT', 'Not set')}")
+    result.append(f"Looking for: {path}")
+    result.append("")
+    
+    for i, check_path in enumerate(paths_to_check):
+        exists = os.path.exists(check_path)
+        result.append(f"Path {i+1}: {check_path}")
+        result.append(f"Exists: {exists}")
+        if exists:
+            result.append(f"Size: {os.path.getsize(check_path)} bytes")
+        result.append("")
+    
+    # Test URL generation
+    try:
+        test_url = generate_secure_pdf_url(path, 1, 300)
+        result.append(f"Generated URL: {test_url}")
+        result.append("")
+        
+        # Test if the URL path exists
+        from django.urls import reverse
+        try:
+            reverse_url = reverse('secure_pdf_view', kwargs={'path': path.replace('/', '---')})
+            result.append(f"Django reverse URL: {reverse_url}")
+        except Exception as e:
+            result.append(f"Django reverse error: {e}")
+    except Exception as e:
+        result.append(f"URL generation error: {e}")
+    
+    return HttpResponse("\n".join(result), content_type="text/plain")
+
+@csrf_exempt
+def secure_pdf_view(request, path):
+    """Secure PDF viewer endpoint with access control"""
+    # Get parameters
+    user_id = request.GET.get('user_id')
+    expires = request.GET.get('expires')
+    signature = request.GET.get('signature')
+    
+    if not all([user_id, expires, signature]):
+        raise Http404("Invalid access parameters")
+    
+    try:
+        user_id = int(user_id)
+        expires = int(expires)
+    except ValueError:
+        raise Http404("Invalid parameter format")
+    
+    # Convert path back from URL-safe format
+    # Use the new separator we implemented
+    actual_path = path.replace('---', '/')
+    
+    # Verify access
+    if not verify_pdf_access(actual_path, user_id, expires, signature):
+        raise Http404("Access denied or expired")
+    
+    # Check if user exists and is authenticated
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        raise Http404("Invalid user")
+    
+    # Build file path
+    from django.conf import settings
+    media_root = getattr(settings, 'MEDIA_ROOT', os.path.join(settings.BASE_DIR, 'media'))
+    file_path = os.path.join(media_root, actual_path)
+    
+    # Check if file exists
+    if not os.path.exists(file_path):
+        # Try in the base directory (for lesson_pdfs)
+        file_path = os.path.join(settings.BASE_DIR, actual_path)
+        if not os.path.exists(file_path):
+            raise Http404("File not found")
+    
+    # Security headers to prevent download
+    response = FileResponse(
+        open(file_path, 'rb'),
+        content_type='application/pdf'
+    )
+    
+    # Add security headers
+    response['Content-Disposition'] = 'inline; filename="secure_view.pdf"'
+    response['X-Frame-Options'] = 'SAMEORIGIN'
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['Pragma'] = 'no-cache'
+    response['Expires'] = '0'
+    
+    # Add watermark headers (client can use these)
+    response['X-User-ID'] = str(user_id)
+    response['X-User-Name'] = user.username or user.email
+    response['X-Access-Time'] = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    return response
+
+
+@csrf_exempt
+def proxy_pdf_view(request, pdf_id):
+    """Proxy PDF content from Supabase through Django to avoid CORS issues"""
+    print(f"🔍 proxy_pdf_view called with pdf_id={pdf_id}")
+    print(f"🔍 Request method: {request.method}")
+    print(f"🔍 Request path: {request.path}")
+    
+    if request.method != 'GET':
+        print(f"❌ Invalid method: {request.method}")
+        raise Http404("Method not allowed")
+    
+    # Get user from JWT token in header, query parameter, or cookies
+    auth_header = request.META.get('HTTP_AUTHORIZATION')
+    token_param = request.GET.get('token')
+    cookie_token = request.COOKIES.get('access_token')
+    
+    print(f"🔍 Auth header: {auth_header}")
+    print(f"🔍 Token param: {token_param}")
+    print(f"🔍 Cookie token: {cookie_token}")
+    
+    token = None
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+    elif token_param:
+        token = token_param
+    elif cookie_token:
+        token = cookie_token
+    
+    if not token:
+        print("❌ No token found")
+        raise Http404("Authentication required")
+    
+    try:
+        # Import JWT verification
+        from rest_framework_simplejwt.tokens import AccessToken
+        from django.contrib.auth.models import User
+        
+        access_token = AccessToken(token)
+        user_id = access_token['user_id']
+        user = User.objects.get(id=user_id)
+        print(f"✅ User authenticated: {user.username}")
+    except Exception as e:
+        print(f"❌ Authentication failed: {e}")
+        raise Http404("Invalid authentication")
+    
+    # Get PDF object and verify access
+    try:
+        from .models import LessonPDF
+        from .enrollment import Enrollment
+        
+        pdf = LessonPDF.objects.get(id=pdf_id)
+        
+        # Check enrollment
+        if not Enrollment.objects.filter(user=user, course=pdf.lesson.course).exists():
+            raise Http404("Access denied")
+            
+    except LessonPDF.DoesNotExist:
+        raise Http404("PDF not found")
+    
+    # Get signed URL from Supabase
+    try:
+        from .storage import _client
+        from django.conf import settings
+        
+        if _client and pdf.pdf_path:
+            signed_url_result = _client.storage.from_(settings.SUPABASE_BUCKET).create_signed_url(
+                pdf.pdf_path, 1800  # 30 minutes
+            )
+            signed_url = signed_url_result.get('signedURL') or signed_url_result.get('signedUrl')
+            
+            if not signed_url:
+                raise Exception("No signed URL generated")
+                
+        else:
+            raise Exception("Supabase not available")
+            
+    except Exception as e:
+        # Fallback to local file
+        local_path = os.path.join(settings.BASE_DIR, pdf.pdf_path)
+        if os.path.exists(local_path):
+            response = FileResponse(
+                open(local_path, 'rb'),
+                content_type='application/pdf'
+            )
+        else:
+            raise Http404("PDF file not found")
+    else:
+        # Fetch PDF from Supabase and stream it
+        try:
+            import urllib.request
+            
+            # Stream the PDF from Supabase
+            def stream_pdf():
+                with urllib.request.urlopen(signed_url) as pdf_response:
+                    while True:
+                        chunk = pdf_response.read(8192)  # 8KB chunks
+                        if not chunk:
+                            break
+                        yield chunk
+            
+            response = StreamingHttpResponse(
+                stream_pdf(),
+                content_type='application/pdf'
+            )
+        except Exception as e:
+            raise Http404(f"Error fetching PDF: {str(e)}")
+    
+    # Add security headers
+    response['Content-Disposition'] = 'inline; filename="secure_view.pdf"'
+    # CRITICAL: Remove X-Frame-Options to allow iframe embedding
+    # response['X-Frame-Options'] = 'SAMEORIGIN'
+    response['X-Content-Type-Options'] = 'nosniff'
+    
+    # Remove strict cache control that might interfere with iframe loading
+    # response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    # response['Pragma'] = 'no-cache'
+    # response['Expires'] = '0'
+    
+    # Add CORS headers for your frontend - support multiple development ports
+    origin = request.META.get('HTTP_ORIGIN')
+    allowed_origins = [
+        'http://localhost:3000',
+        'http://localhost:3001', 
+        'http://localhost:5173'
+    ]
+    if origin in allowed_origins:
+        response['Access-Control-Allow-Origin'] = origin
+    else:
+        response['Access-Control-Allow-Origin'] = '*'  # Allow all for iframe testing
+    response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+    response['Access-Control-Allow-Methods'] = 'GET'
+    
+    # Add watermark headers
+    response['X-User-ID'] = str(user.id)
+    response['X-User-Name'] = user.username or user.email
+    response['X-Access-Time'] = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    return response
 
 
 

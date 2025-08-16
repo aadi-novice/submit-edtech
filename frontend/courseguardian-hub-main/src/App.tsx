@@ -7,12 +7,20 @@ import { Toaster as HotToaster } from 'react-hot-toast';
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/common/ProtectedRoute";
 import AdminRedirect from "@/components/common/AdminRedirect";
+import { DebugAuth } from "@/components/DebugAuth";
+import { PDFDebugger } from "@/components/PDFDebugger";
+import { LoginTester } from "@/components/LoginTester";
+import NetworkTester from "@/components/NetworkTester";
+import DirectAPITester from "@/components/DirectAPITester";
+import CookieManager from "@/components/CookieManager";
+import RequestTracker from "@/components/RequestTracker";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import StudentDashboard from "./pages/dashboard/StudentDashboard";
+import CourseCatalog from "./pages/dashboard/CourseCatalog";
 import CourseView from "./pages/CourseView";
 
 const queryClient = new QueryClient();
@@ -43,6 +51,15 @@ const App = () => (
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             
+            {/* Debug Routes */}
+            <Route path="/debug-auth" element={<DebugAuth />} />
+            <Route path="/debug-pdf" element={<PDFDebugger />} />
+            <Route path="/debug-login" element={<LoginTester />} />
+            <Route path="/debug-network" element={<NetworkTester />} />
+            <Route path="/debug-api" element={<DirectAPITester />} />
+            <Route path="/debug-cookies" element={<CookieManager />} />
+            <Route path="/debug-requests" element={<RequestTracker />} />
+            
             {/* Dashboard Routes */}
             <Route
               path="/admin"
@@ -67,6 +84,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <StudentDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/courses"
+              element={
+                <ProtectedRoute>
+                  <CourseCatalog />
                 </ProtectedRoute>
               }
             />

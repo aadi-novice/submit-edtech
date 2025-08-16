@@ -10,11 +10,15 @@ class APIService {
   private isRefreshing = false;
 
   constructor() {
+    console.log('🏗️ APIService constructor - API_BASE_URL:', API_BASE_URL);
+    
     this.api = axios.create({
       baseURL: API_BASE_URL,
       headers: {
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // 10 second timeout
+      withCredentials: true, // Essential for CORS requests with cookies
     });
 
     // Request interceptor to add auth token
@@ -23,6 +27,9 @@ class APIService {
         const token = Cookies.get('access_token');
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
+          console.log('🔑 Auth token found and added to request:', config.url, token.substring(0, 20) + '...');
+        } else {
+          console.warn('⚠️ No auth token found for request:', config.url);
         }
         return config;
       },
@@ -113,33 +120,67 @@ class APIService {
   async login(username: string, password: string): Promise<LoginResponse> {
     try {
       console.log('🔐 Attempting login with:', { username, password: '***' });
+      console.log('🌐 API Base URL:', API_BASE_URL);
+      console.log('🎯 Full login URL:', `${API_BASE_URL}/auth/login/`);
       
       // First, get the JWT tokens
+      console.log('📤 Step 1: Getting JWT tokens...');
       const tokenResponse = await this.post<{ access: string; refresh: string }>('/auth/login/', { username, password });
-      console.log('✅ JWT tokens received:', { access: tokenResponse.access.substring(0, 20) + '...', refresh: tokenResponse.refresh.substring(0, 20) + '...' });
+      console.log('✅ Step 1 SUCCESS: JWT tokens received:', { access: tokenResponse.access.substring(0, 20) + '...', refresh: tokenResponse.refresh.substring(0, 20) + '...' });
       
-      // Store the tokens temporarily to fetch user data
-      const tempToken = tokenResponse.access;
+      // Immediately store tokens in cookies for subsequent requests
+      console.log('💾 Step 2: Storing tokens in cookies...');
+      Cookies.set('access_token', tokenResponse.access, {
+        expires: 1,
+        secure: false, // Allow for localhost development
+        sameSite: 'lax' // More permissive for localhost
+      });
+
+      Cookies.set('refresh_token', tokenResponse.refresh, {
+        expires: 7,
+        secure: false, // Allow for localhost development
+        sameSite: 'lax' // More permissive for localhost
+      });
+      console.log('✅ Step 2 SUCCESS: Tokens stored in cookies');
       
-      // Get user data with the token
-      console.log('👤 Fetching user data...');
+      // Verify tokens are stored
+      const storedAccess = Cookies.get('access_token');
+      const storedRefresh = Cookies.get('refresh_token');
+      console.log('🔍 Verification: Stored tokens:', { 
+        access: storedAccess ? storedAccess.substring(0, 20) + '...' : 'NOT FOUND',
+        refresh: storedRefresh ? storedRefresh.substring(0, 20) + '...' : 'NOT FOUND'
+      });
+      
+      // Get user data using explicit Authorization header to avoid timing issues
+      console.log('👤 Step 3: Fetching user data with explicit token...');
       const userResponse = await this.api.get<User>('/auth/me/', {
         headers: {
-          Authorization: `Bearer ${tempToken}`
+          Authorization: `Bearer ${tokenResponse.access}`
         }
       });
-      console.log('✅ User data received:', userResponse.data);
+      console.log('✅ Step 3 SUCCESS: User data received:', userResponse.data);
       
       const result = {
         access: tokenResponse.access,
         refresh: tokenResponse.refresh,
         user: userResponse.data
       };
-      console.log('🎉 Login successful, returning:', { ...result, access: result.access.substring(0, 20) + '...', refresh: result.refresh.substring(0, 20) + '...' });
+      console.log('🎉 LOGIN COMPLETE: All steps successful');
       return result;
     } catch (error) {
-      console.error('❌ Login failed:', error);
+      console.error('❌ Login failed at some step:', error);
       const axiosError = error as AxiosError;
+      
+      // Log more details about where the error occurred
+      if (axiosError.config) {
+        console.error('❌ Failed request details:', {
+          method: axiosError.config.method,
+          url: axiosError.config.url,
+          baseURL: axiosError.config.baseURL,
+          fullURL: `${axiosError.config.baseURL}${axiosError.config.url}`
+        });
+      }
+      
       const errorData = axiosError.response?.data as { detail?: string; message?: string };
       const errorMessage = errorData?.detail ||
                           errorData?.message ||
@@ -205,6 +246,38 @@ class APIService {
     // Add search parameter to URL if provided
     const url = searchQuery ? `/courses/?search=${encodeURIComponent(searchQuery)}` : '/courses/';
     return this.get<Course[]>(url);
+  }
+
+  async getMyCourses(): Promise<Course[]> {
+    return this.get<Course[]>('/courses/my_courses/');
+  }
+
+  async enrollInCourse(courseId: number): Promise<{ message: string }> {
+    return this.post<{ message: string }>(`/courses/${courseId}/enroll/`);
+  }
+
+  async unenrollFromCourse(courseId: number): Promise<{ message: string }> {
+    return this.post<{ message: string }>(`/courses/${courseId}/unenroll/`);
+  }
+
+  async getDashboardStats(): Promise<{
+    total_courses: number;
+    total_materials: number;
+    completed_materials: number;
+    overall_progress: number;
+    courses: Course[];
+  }> {
+    return this.get<{
+      total_courses: number;
+      total_materials: number;
+      completed_materials: number;
+      overall_progress: number;
+      courses: Course[];
+    }>('/courses/dashboard_stats/');
+  }
+
+  async markLessonCompleted(pdfId: number): Promise<{ message: string; lesson_title: string; course_progress: number }> {
+    return this.post<{ message: string; lesson_title: string; course_progress: number }>(`/lessonpdfs/${pdfId}/mark_completed/`);
   }
 
   async getLessons(courseId: number): Promise<Lesson[]> {

@@ -153,26 +153,38 @@ yarn dev
 
 ## 🔧 Admin Management
 
-### Django Admin Panel
-The platform uses Django's built-in admin panel for all administrative tasks:
+### Django Admin Panel (Recommended)
+The platform uses Django's built-in admin panel for all administrative tasks. **No frontend admin UI is provided** - all admin operations are managed through Django's powerful admin interface.
+
+**Why Django Admin?**
+- **Complete Functionality**: Full CRUD operations for all models with built-in validation
+- **Development Speed**: Instant admin interface without custom development time
+- **Built-in Security**: Django's robust permission system and CSRF protection
+- **Rich Interface**: Advanced filtering, search, bulk operations, and inline editing
+- **Professional Grade**: Battle-tested admin interface used by thousands of Django applications
 
 **Admin Features Available:**
-- **Course Management**: Create, edit, delete courses with descriptions
-- **Lesson Management**: Add lessons to courses with inline editing
+- **Course Management**: Create, edit, delete courses with descriptions and metadata
+- **Lesson Management**: Add lessons to courses with drag-and-drop ordering
 - **PDF Upload & Management**: Upload PDFs directly to lessons with Supabase integration
-- **User Management**: Manage user accounts, roles, and permissions
-- **Enrollment Management**: View and manage student enrollments
-- **Bulk Operations**: Import/export data, bulk actions
-- **Advanced Filtering**: Search and filter across all models
+- **User Management**: Manage user accounts, roles, and permissions with Django's user system
+- **Enrollment Management**: View and manage student enrollments with filters and search
+- **Bulk Operations**: Import/export data, bulk actions for mass operations
+- **Advanced Filtering**: Search and filter across all models with date ranges and relationships
 
 **Accessing Admin Panel:**
-1. Navigate to `/admin` in the frontend (for admin users)
-2. Click "Open Django Admin Panel" button
-3. Or directly visit: `http://localhost:8000/admin/`
+1. **For Admin Users**: Navigate to `/admin` in the frontend and click "Open Django Admin Panel"
+2. **Direct Access**: Visit `http://localhost:8000/admin/` directly
+3. **Mobile Friendly**: Django admin is responsive and works on all devices
 
-**Admin Login:**
-- Use any admin account credentials
-- Demo admin: `admin` / `admin123`
+**Admin Credentials:**
+- **Production**: Create admin via `python manage.py createsuperuser`
+- **Demo/Development**: `admin` / `admin123`
+
+### Student Registration
+- **Frontend Registration**: Students register through the React frontend
+- **Role Assignment**: All frontend registrations are automatically assigned "student" role
+- **Admin Creation**: Admin accounts are created only through Django admin or command line
 
 ## 🔧 API Endpoints
 
@@ -201,17 +213,27 @@ The platform uses Django's built-in admin panel for all administrative tasks:
 
 ## 👥 User Roles
 
-### Admin
-- Create and manage courses
-- Upload and manage lesson PDFs
-- View all courses and enrollments
-- Full system access
+### Admin (Django Admin Only)
+- **Access**: Django admin panel at `/admin`
+- **Capabilities**:
+  - Create and manage courses with full metadata
+  - Upload and organize lesson PDFs
+  - Manage user accounts and permissions
+  - View enrollment statistics and analytics
+  - Bulk operations and data management
+  - System configuration and settings
+- **Creation**: Only through Django admin or `createsuperuser` command
 
-### Student
-- Enroll in courses
-- View enrolled course materials
-- Access lesson PDFs
-- View personal progress
+### Student (Frontend Registration)
+- **Access**: React frontend dashboard at `/dashboard`
+- **Capabilities**:
+  - Register through frontend form
+  - Enroll in available courses
+  - View enrolled course materials
+  - Access lesson PDFs with watermarks
+  - Track personal learning progress
+  - User profile management
+- **Registration**: Self-registration through `/register` page
 
 ## 🔐 Authentication
 

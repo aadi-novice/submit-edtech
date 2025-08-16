@@ -34,10 +34,12 @@ export const StudentSidebar: React.FC = () => {
   const loadCourses = useCallback(async () => {
     try {
       setLoading(true);
-      const coursesData = await authAPI.getCourses();
+      console.log('🔄 Loading enrolled courses...');
+      const coursesData = await authAPI.getMyCourses();
+      console.log('✅ Enrolled courses loaded:', coursesData);
       setCourses(coursesData || []);
     } catch (error) {
-      console.error('Failed to load courses:', error);
+      console.error('❌ Failed to load courses:', error);
       setCourses([]);
     } finally {
       setLoading(false);
@@ -92,7 +94,7 @@ export const StudentSidebar: React.FC = () => {
                         "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
                         "hover:bg-accent hover:text-accent-foreground",
                         isActive
-                          ? "bg-primary text-primary-foreground shadow-sm font-medium"
+                          ? "bg-primary-black text-primary-foreground shadow-sm font-medium"
                           : "text-muted-foreground"
                       )
                     }
@@ -100,6 +102,32 @@ export const StudentSidebar: React.FC = () => {
                     <Home className="h-4 w-4 flex-shrink-0" />
                     {!isCollapsed && (
                       <span className="font-medium">Dashboard</span>
+                    )}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  asChild 
+                  tooltip="Browse Courses"
+                  className="w-full"
+                >
+                  <NavLink
+                    to="/dashboard/courses"
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-sm font-medium"
+                          : "text-muted-foreground"
+                      )
+                    }
+                  >
+                    <BookOpen className="h-4 w-4 flex-shrink-0" />
+                    {!isCollapsed && (
+                      <span className="font-medium">Browse Courses</span>
                     )}
                   </NavLink>
                 </SidebarMenuButton>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Loader2, Eye, Shield, Download, AlertTriangle, User, Clock } from 'lucide-react';
+import Cookies from 'js-cookie';
 
 interface SecurePDFViewerProps {
   pdfUrl: string;
@@ -31,9 +32,6 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
     if (!iframeRef.current) return;
 
     try {
-      // Attempt to access iframe content (may be blocked by CORS)
-      const iframe = iframeRef.current;
-      
       // Add keyboard event listeners to prevent downloads
       const handleKeyDown = (e: KeyboardEvent) => {
         // Prevent Ctrl+S, Ctrl+P, F12, etc.
@@ -68,17 +66,14 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
       const handleMouseMove = () => {
         clearTimeout(mouseMoveTimer);
         mouseMoveTimer = setTimeout(() => {
-          // Reset protection state if user is inactive
           setIsProtected(false);
         }, 30000); // 30 seconds of inactivity
       };
 
-      // Add event listeners to the document
       document.addEventListener('keydown', handleKeyDown);
       document.addEventListener('contextmenu', handleContextMenu as EventListener);
       document.addEventListener('mousemove', handleMouseMove);
 
-      // Cleanup function
       return () => {
         document.removeEventListener('keydown', handleKeyDown);
         document.removeEventListener('contextmenu', handleContextMenu as EventListener);
@@ -92,33 +87,145 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
 
   useEffect(() => {
     const loadPDF = async () => {
+      if (!pdfUrl) {
+        console.log('⚠️ No PDF URL provided');
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
+        setError(null);
         
-        // Add security headers and protection
-        if (iframeRef.current) {
-          iframeRef.current.onload = () => {
-            // Add protection layer after iframe loads
-            addProtectionLayer();
-          };
+        console.log('🔄 Loading PDF:', pdfUrl);
+        
+        // Get authentication token
+        const token = Cookies.get('access_token');
+        console.log('🔑 Token available:', token ? 'Yes' : 'No');
+        
+        if (!token) {
+          throw new Error('No authentication token found. Please log in again.');
         }
         
-        // Set a timeout to ensure protection is applied
-        const timeoutId = setTimeout(() => {
-          addProtectionLayer();
-        }, 1000);
-
-        return () => clearTimeout(timeoutId);
-      } catch (err) {
-        setError('Failed to load PDF securely');
-        console.error('PDF loading error:', err);
-      } finally {
+        // Check if this is a proxy URL that can be loaded directly
+        const isProxyUrl = pdfUrl.includes('/api/proxy-pdf/');
+        
+        if (isProxyUrl) {
+          console.log('🎯 Detected proxy URL - loading directly in iframe');
+          
+          // For proxy URLs, we can load directly with token in URL
+          const authenticatedUrl = `${pdfUrl}?token=${encodeURIComponent(token)}`;
+          
+          if (iframeRef.current) {
+            const iframe = iframeRef.current;
+            
+            console.log('🎯 Setting iframe src to authenticated proxy URL');
+            iframe.src = authenticatedUrl;
+            
+            // Quick timeout for proxy URLs
+            const quickTimeout = setTimeout(() => {
+              console.log('⚡ Proxy URL timeout (1s) - assuming successful load');
+              setLoading(false);
+              addProtectionLayer();
+            }, 1000);
+            
+            const handleLoad = () => {
+              console.log('✅ Proxy iframe loaded successfully');
+              clearTimeout(quickTimeout);
+              setLoading(false);
+              addProtectionLayer();
+            };
+            
+            const handleError = (e: any) => {
+              console.error('❌ Proxy iframe load error:', e);
+              clearTimeout(quickTimeout);
+              setError('Failed to display PDF in viewer');
+              setLoading(false);
+            };
+            
+            iframe.onload = handleLoad;
+            iframe.onerror = handleError;
+          }
+        } else {
+          console.log('🔄 Non-proxy URL - using fetch approach');
+          
+          // For non-proxy URLs, use the fetch and blob approach
+          const response = await fetch(pdfUrl, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/pdf'
+            },
+            credentials: 'include'
+          });
+          
+          console.log('📥 Response received:', response.status, response.statusText);
+          console.log('📄 Content-Type:', response.headers.get('Content-Type'));
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Response error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          // Create blob from response
+          console.log('🔄 Creating blob...');
+          const pdfBlob = await response.blob();
+          console.log('✅ Blob created:', pdfBlob.size, 'bytes, type:', pdfBlob.type);
+          
+          // Create object URL
+          const blobUrl = URL.createObjectURL(pdfBlob);
+          console.log('🔗 Blob URL created:', blobUrl);
+          
+          // Set iframe source
+          if (iframeRef.current) {
+            const iframe = iframeRef.current;
+            
+            console.log('🎯 Setting iframe src to blob URL');
+            iframe.src = blobUrl;
+            
+            // Aggressive timeout fallback - PDFs often don't fire onload reliably
+            const quickTimeout = setTimeout(() => {
+              console.log('⚡ Quick timeout (1s) - forcing load completion');
+              setLoading(false);
+              addProtectionLayer();
+            }, 1000); // Just 1 second
+            
+            const handleLoad = () => {
+              console.log('✅ Blob iframe loaded successfully');
+              clearTimeout(quickTimeout);
+              setLoading(false);
+              addProtectionLayer();
+              
+              // Clean up blob URL after successful load
+              setTimeout(() => {
+                URL.revokeObjectURL(blobUrl);
+                console.log('🧹 Blob URL cleaned up');
+              }, 2000);
+            };
+            
+            const handleError = (e: any) => {
+              console.error('❌ Blob iframe load error:', e);
+              clearTimeout(quickTimeout);
+              setError('Failed to display PDF in viewer');
+              setLoading(false);
+              URL.revokeObjectURL(blobUrl);
+            };
+            
+            iframe.onload = handleLoad;
+            iframe.onerror = handleError;
+          }
+        }
+        
+      } catch (err: any) {
+        console.error('❌ PDF loading error:', err);
+        setError(`Failed to load PDF: ${err.message || 'Unknown error'}`);
         setLoading(false);
       }
     };
 
     loadPDF();
-  }, [pdfUrl, userId, addProtectionLayer]);
+  }, [pdfUrl, addProtectionLayer]);
 
   const handleDownloadAttempt = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -178,29 +285,35 @@ export const SecurePDFViewer: React.FC<SecurePDFViewerProps> = ({
       <div className="relative bg-white">
         <iframe
           ref={iframeRef}
-          src={pdfUrl}
+          src=""
           className="w-full h-96 border-0"
           title={`Secure PDF Viewer - ${title}`}
           sandbox="allow-same-origin allow-scripts allow-forms"
           style={{
-            pointerEvents: isProtected ? 'none' : 'auto',
+            pointerEvents: 'auto',
             WebkitUserSelect: 'none',
             MozUserSelect: 'none',
             msUserSelect: 'none',
             userSelect: 'none'
           }}
+          onLoad={() => {
+            console.log('🎯 Iframe onLoad event fired');
+          }}
+          onError={(e) => {
+            console.error('🚨 Iframe onError event fired:', e);
+            setError('Failed to load PDF in iframe');
+            setLoading(false);
+          }}
         />
         
-        {/* Dynamic Watermark Overlay */}
+        {/* Dynamic Watermark Overlay - Very Subtle */}
         {isWatermarkVisible && watermark && (
           <div className="absolute inset-0 pointer-events-none">
-            <div className="absolute top-4 right-4 transform rotate-12 bg-black bg-opacity-10 text-gray-600 text-xs font-mono px-3 py-1 rounded border border-gray-300">
-              {watermark}
+            {/* Small corner watermarks */}
+            <div className="absolute top-2 right-2 transform rotate-12 text-gray-400 text-xs font-mono opacity-20 bg-white bg-opacity-50 px-1 py-0.5 rounded">
+              {watermark.split(' • ')[0]} {/* Just show username part */}
             </div>
-            <div className="absolute bottom-4 left-4 transform -rotate-12 bg-black bg-opacity-10 text-gray-600 text-xs font-mono px-3 py-1 rounded border border-gray-300">
-              {watermark}
-            </div>
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-gray-400 text-lg font-bold opacity-30">
+            <div className="absolute bottom-2 left-2 transform -rotate-12 text-gray-400 text-xs font-mono opacity-20 bg-white bg-opacity-50 px-1 py-0.5 rounded">
               PROTECTED
             </div>
           </div>

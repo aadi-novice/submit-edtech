@@ -1,6 +1,7 @@
 export interface User {
   id: number;
   email: string;
+  username?: string;
   firstName: string;
   lastName: string;
   role: 'admin' | 'student';
@@ -22,8 +23,9 @@ export interface AuthContextType {
     password: string;
     firstName: string;
     lastName: string;
+    username: string;
     role?: 'admin' | 'student';
-  }) => Promise<boolean>;
+  }) => Promise<{ success: boolean; errors?: Record<string, string[]> }>;
   logout: () => void;
   forgotPassword: (email: string) => Promise<boolean>;
   isAuthenticated: boolean;
@@ -35,6 +37,9 @@ export interface Course {
   description?: string;
   created_at?: string;
   pdfCount?: number;
+  lesson_count?: number;
+  completed_lessons?: number;
+  progress_percentage?: number;
 }
 
 export interface Lesson {

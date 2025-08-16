@@ -37,19 +37,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Django expects username, not email, for login
       const response = await authAPI.login(username, password);
 
-      Cookies.set('access_token', response.access, {
-        expires: 1,
-        secure: import.meta.env.PROD,
-        sameSite: 'strict'
-      });
-
-      Cookies.set('refresh_token', response.refresh, {
-        expires: 7,
-        secure: import.meta.env.PROD,
-        sameSite: 'strict'
-      });
-
-      // Use user data from login response instead of making another API call
+      // Tokens are already stored by the API service, just set user data
       setUser(response.user);
       toast.success(`Welcome ${response.user.firstName}!`);
       return true;
@@ -97,27 +85,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   password: string;
   firstName: string;
   lastName: string;
-}): Promise<boolean> => {
+  username: string;
+  role?: 'admin' | 'student';
+}): Promise<{ success: boolean; errors?: Record<string, string[]> }> => {
   try {
     // Map frontend fields to Django backend fields
     const payload = {
-      username: userData.email, // still needed because DRF User model uses username
+      username: userData.username, // Use the provided username instead of email
       email: userData.email,
       password: userData.password,
       first_name: userData.firstName,
       last_name: userData.lastName,
+      role: userData.role || 'student',
     };
     await authAPI.register(payload);
     toast.success('Registration successful! Please login.');
-    return true;
+    return { success: true };
   } catch (error: unknown) {
-    const axiosError = error as { response?: { data?: { detail?: string; message?: string } } };
-    toast.error(
-      axiosError.response?.data?.message ||
-      axiosError.response?.data?.detail ||
-      'Registration failed'
-    );
-    return false;
+    const axiosError = error as { 
+      response?: { 
+        data?: { 
+          detail?: string; 
+          message?: string;
+          username?: string[];
+          email?: string[];
+          password?: string[];
+          [key: string]: any;
+        } 
+      } 
+    };
+    
+    const errorData = axiosError.response?.data;
+    
+    // Extract field-specific errors
+    const fieldErrors: Record<string, string[]> = {};
+    if (errorData) {
+      Object.keys(errorData).forEach(key => {
+        if (Array.isArray(errorData[key])) {
+          fieldErrors[key] = errorData[key];
+        } else if (typeof errorData[key] === 'string') {
+          fieldErrors[key] = [errorData[key]];
+        }
+      });
+    }
+    
+    // Show general error toast
+    const generalError = errorData?.message || errorData?.detail || 'Registration failed';
+    toast.error(generalError);
+    
+    return { success: false, errors: fieldErrors };
   }
 };
 

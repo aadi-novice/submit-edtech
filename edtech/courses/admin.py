@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import PDFDocument, Course, Lesson, LessonPDF
+from .models import PDFDocument, Course, Lesson, LessonPDF, LessonProgress, CourseProgress
 from .enrollment import Enrollment
 from .profile import Profile
 
@@ -77,6 +77,53 @@ class EnrollmentAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'user__email', 'course__title')
     date_hierarchy = 'enrolled_at'
 
+# Progress Tracking Admin
+class LessonProgressAdmin(admin.ModelAdmin):
+    list_display = ('user', 'lesson_pdf', 'get_course', 'is_completed', 'completed_at', 'last_accessed')
+    list_filter = ('is_completed', 'lesson_pdf__lesson__course', 'completed_at')
+    search_fields = ('user__username', 'user__email', 'lesson_pdf__title', 'lesson_pdf__lesson__title')
+    date_hierarchy = 'completed_at'
+    
+    def get_course(self, obj):
+        return obj.lesson_pdf.lesson.course.title
+    get_course.short_description = 'Course'
+
+class CourseProgressAdmin(admin.ModelAdmin):
+    list_display = ('user', 'course', 'progress_percentage', 'last_accessed', 'created_at')
+    list_filter = ('course', 'last_accessed')
+    search_fields = ('user__username', 'user__email', 'course__title')
+    date_hierarchy = 'last_accessed'
+    
+    actions = ['recalculate_progress']
+    
+    def recalculate_progress(self, request, queryset):
+        for course_progress in queryset:
+            course_progress.calculate_progress()
+        self.message_user(request, f"Recalculated progress for {queryset.count()} course(s).")
+    recalculate_progress.short_description = "Recalculate progress"
+
+# Progress tracking admins
+class LessonProgressAdmin(admin.ModelAdmin):
+    list_display = ('user', 'lesson_pdf', 'is_completed', 'completed_at', 'last_accessed')
+    list_filter = ('is_completed', 'lesson_pdf__lesson__course', 'completed_at', 'last_accessed')
+    search_fields = ('user__username', 'user__email', 'lesson_pdf__title', 'lesson_pdf__lesson__title')
+    date_hierarchy = 'completed_at'
+    readonly_fields = ('last_accessed', 'created_at')
+
+class CourseProgressAdmin(admin.ModelAdmin):
+    list_display = ('user', 'course', 'progress_percentage', 'last_accessed')
+    list_filter = ('course', 'last_accessed')
+    search_fields = ('user__username', 'user__email', 'course__title')
+    readonly_fields = ('last_accessed', 'created_at')
+    
+    actions = ['recalculate_progress']
+    
+    def recalculate_progress(self, request, queryset):
+        for progress in queryset:
+            progress.calculate_progress()
+        self.message_user(request, f"Recalculated progress for {queryset.count()} records.")
+    recalculate_progress.short_description = "Recalculate progress for selected records"
+
 # Enhanced PDFDocument Admin
 class PDFDocumentAdmin(admin.ModelAdmin):
     list_display = ('title', 'uploaded_at')
@@ -94,6 +141,8 @@ admin.site.register(Course, CourseAdmin)
 admin.site.register(Lesson, LessonAdmin)
 admin.site.register(LessonPDF, LessonPDFAdmin)
 admin.site.register(Enrollment, EnrollmentAdmin)
+admin.site.register(LessonProgress, LessonProgressAdmin)
+admin.site.register(CourseProgress, CourseProgressAdmin)
 
 # Customize admin site headers
 admin.site.site_header = "CourseGuardian Admin Panel"

@@ -5,17 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EyeIcon, EyeOffIcon, GraduationCap } from 'lucide-react';
 
 const Register: React.FC = () => {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'student' as 'admin' | 'student'
+    role: 'student' as 'student'
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,6 +37,14 @@ const Register: React.FC = () => {
     
     if (!formData.lastName.trim()) {
       newErrors.lastName = 'Last name is required';
+    }
+    
+    if (!formData.username.trim()) {
+      newErrors.username = 'Username is required';
+    } else if (formData.username.length < 3) {
+      newErrors.username = 'Username must be at least 3 characters';
+    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+      newErrors.username = 'Username can only contain letters, numbers, and underscores';
     }
     
     if (!formData.email) {
@@ -75,18 +83,29 @@ const Register: React.FC = () => {
     if (!validateForm()) return;
 
     setLoading(true);
-    const success = await register({
+    const result = await register({
       firstName: formData.firstName,
       lastName: formData.lastName,
+      username: formData.username,
       email: formData.email,
       password: formData.password,
       role: formData.role
     });
     setLoading(false);
 
-    if (success) {
+    if (result.success) {
       // Redirect to login page
       window.location.href = '/login';
+    } else if (result.errors) {
+      // Set field-specific errors
+      const newErrors: Record<string, string> = {};
+      Object.keys(result.errors).forEach(field => {
+        const fieldErrors = result.errors![field];
+        if (fieldErrors && fieldErrors.length > 0) {
+          newErrors[field] = fieldErrors[0]; // Show first error for each field
+        }
+      });
+      setErrors(newErrors);
     }
   };
 
@@ -140,16 +159,20 @@ const Register: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select value={formData.role} onValueChange={(value: 'admin' | 'student') => handleInputChange('role', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select your role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="username">Username</Label>
+                <Input
+                  id="username"
+                  placeholder="john_doe"
+                  value={formData.username}
+                  onChange={(e) => handleInputChange('username', e.target.value)}
+                  className={errors.username ? 'border-destructive' : ''}
+                />
+                {errors.username && (
+                  <p className="text-xs text-destructive">{errors.username}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Choose a unique username (letters, numbers, and underscores only)
+                </p>
               </div>
 
               <div className="space-y-2">

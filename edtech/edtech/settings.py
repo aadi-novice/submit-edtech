@@ -37,7 +37,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or os.getenv('SECRET_KEY') or 'djang
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ['true', '1', 'yes', 'on']
 
 # Set ALLOWED_HOSTS from environment or default to localhost
 ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '127.0.0.1,localhost').split(',')
@@ -118,8 +118,9 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in development
 
 # Production CORS settings
 CORS_ALLOWED_ORIGINS = [
-    #"https://localhost:3000",  # Local development
-    #"https://localhost:5173", # 
+    "http://localhost:3000",  # Local development (React default)
+    "http://localhost:3001",  # Local development (Vite alternative port)
+    "http://localhost:5173",  # Local development (Vite default)
     "https://submission-edtech.netlify.app",  # Remove trailing slash
 ]
 
@@ -132,6 +133,20 @@ if NETLIFY_URL:
 FRONTEND_URL = os.getenv('FRONTEND_URL')
 if FRONTEND_URL:
     CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
+
+# Additional CORS settings for authentication
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # Content Security Policy for enhanced security
 CSP_DEFAULT_SRC = ("'self'",)

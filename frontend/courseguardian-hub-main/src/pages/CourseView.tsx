@@ -6,8 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { authAPI } from '@/services/api';
+import Cookies from 'js-cookie';
 import { BookOpen, FileText, Clock, ArrowLeft, Loader2 } from 'lucide-react';
 import { SecurePDFViewer } from '@/components/SecurePDFViewer';
+import { ReactPDFViewer } from '@/components/ReactPDFViewer';
+import { SimplePDFViewer } from '@/components/SimplePDFViewer';
+import { BasicPDFViewer } from '@/components/BasicPDFViewer';
+import { BlobPDFViewer } from '@/components/BlobPDFViewer';
 
 interface Lesson {
   id: number;
@@ -36,28 +41,53 @@ const CourseView: React.FC = () => {
 
   useEffect(() => {
     const fetchCourse = async () => {
-      if (!courseId) return;
+      if (!courseId) {
+        setError('No course ID provided');
+        return;
+      }
       
       try {
         setLoading(true);
-        const coursesData = await authAPI.getCourses();
-        const courseData = coursesData.find(c => c.id === parseInt(courseId));
+        setError(null);
+        console.log('🔄 Fetching course data for ID:', courseId);
+        
+        // First, try to get enrolled courses to check if user has access
+        let courseData = null;
+        try {
+          const enrolledCourses = await authAPI.getMyCourses();
+          console.log('📚 Enrolled courses:', enrolledCourses);
+          courseData = enrolledCourses.find(c => c.id === parseInt(courseId));
+        } catch (enrolledErr) {
+          console.warn('⚠️ Could not fetch enrolled courses, trying all courses:', enrolledErr);
+          // Fallback to all courses if enrolled courses fails
+          const allCourses = await authAPI.getCourses();
+          console.log('📖 All courses:', allCourses);
+          courseData = allCourses.find(c => c.id === parseInt(courseId));
+        }
         
         if (!courseData) {
-          setError('Course not found');
+          setError('Course not found or you are not enrolled in this course');
+          console.error('❌ Course not found with ID:', courseId);
           return;
         }
 
+        console.log('✅ Course found:', courseData);
+
         // Fetch lessons for this course
+        console.log('🔄 Fetching lessons for course:', courseId);
         const lessonsData = await authAPI.getLessons(parseInt(courseId));
+        console.log('📝 Lessons found:', lessonsData);
         
         setCourse({
           ...courseData,
-          lessons: lessonsData
+          lessons: lessonsData || []
         });
+        console.log('✅ Course data set successfully');
+        
       } catch (err) {
-        setError('Failed to load course');
-        console.error('Error fetching course:', err);
+        console.error('❌ Error fetching course:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load course';
+        setError(`Failed to load course: ${errorMessage}`);
       } finally {
         setLoading(false);
       }
@@ -68,31 +98,57 @@ const CourseView: React.FC = () => {
 
   const handleLessonSelect = async (lesson: Lesson) => {
     setSelectedLesson(lesson);
+    setPdfLoading(true);
     
-    if (lesson.pdf_path) {
-      try {
-        setPdfLoading(true);
-        const pdfs = await authAPI.getLessonPDFs(lesson.id);
-        if (pdfs.length > 0) {
-          const signedUrlData = await authAPI.getPDFSignedUrl(pdfs[0].id);
-          setPdfUrl(signedUrlData.signed_url);
-          // Store watermark for the SecurePDFViewer
-          setWatermark(signedUrlData.watermark);
-        } else {
-          setPdfUrl(null);
-          setWatermark(null);
+    try {
+      console.log('🔄 Loading PDFs for lesson:', lesson.id);
+      console.log('📍 Current user:', user);
+      console.log('🔗 API base URL:', import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000');
+      
+      // First, get all PDFs for this lesson
+      const pdfs = await authAPI.getLessonPDFs(lesson.id);
+      console.log('📄 PDFs found:', pdfs);
+      
+      if (pdfs && pdfs.length > 0) {
+        const firstPdf = pdfs[0];
+        console.log('🎯 Using PDF:', firstPdf);
+        
+        // Use proxy endpoint for iframe embedding with cookie authentication
+        const proxyUrl = `http://localhost:8000/api/proxy-pdf/${firstPdf.id}`;
+        console.log('🎯 Proxy URL for iframe (using cookies):', proxyUrl);
+        
+        setPdfUrl(proxyUrl);
+        setWatermark(`${user?.username || user?.email} • ${new Date().toLocaleDateString()}`);
+        
+        // Mark lesson as accessed for progress tracking
+        try {
+          await authAPI.markLessonCompleted(firstPdf.id);
+          console.log('✅ Lesson marked as accessed');
+        } catch (progressErr) {
+          console.warn('⚠️ Failed to track lesson progress:', progressErr);
         }
-      } catch (err) {
-        console.error('Error fetching PDF:', err);
-        setError('Failed to load PDF');
+      } else {
+        console.log('❌ No PDFs found for this lesson');
         setPdfUrl(null);
         setWatermark(null);
-      } finally {
-        setPdfLoading(false);
+        setError('No PDF materials found for this lesson.');
       }
-    } else {
+    } catch (err) {
+      console.error('❌ Error loading lesson PDFs:', err);
+      console.error('❌ Error details:', {
+        message: err instanceof Error ? err.message : 'Unknown error',
+        stack: err instanceof Error ? err.stack : undefined,
+        response: (err as any)?.response?.data,
+        status: (err as any)?.response?.status,
+        statusText: (err as any)?.response?.statusText
+      });
+      
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Failed to load lesson content: ${errorMessage}. Please check the browser console for more details.`);
       setPdfUrl(null);
       setWatermark(null);
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -205,11 +261,9 @@ const CourseView: React.FC = () => {
                       <span className="ml-2">Loading PDF...</span>
                     </div>
                   ) : pdfUrl ? (
-                    <SecurePDFViewer
+                    <BlobPDFViewer
                       pdfUrl={pdfUrl}
                       title={selectedLesson.title}
-                      userId={user?.id}
-                      watermark={watermark}
                       className="h-96"
                     />
                   ) : (

@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 import { 
   BookOpen, 
   Upload, 
@@ -68,28 +69,41 @@ export const AdminSidebar: React.FC = () => {
 
   return (
     <Sidebar
-      className={isCollapsed ? 'w-14' : 'w-64'}
+      variant="sidebar"
       collapsible="icon"
+      className={cn(
+        "border-r border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60",
+        isCollapsed ? "w-16" : "w-64"
+      )}
     >
       <SidebarContent className="bg-card border-r">
         <SidebarGroup>
-          <SidebarGroupLabel className={isCollapsed ? 'sr-only' : ''}>
+          <SidebarGroupLabel className={cn(
+            "px-4 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider",
+            isCollapsed && "sr-only"
+          )}>
             Admin Panel
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {adminMenuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
+                  <SidebarMenuButton 
+                    asChild 
+                    tooltip={isCollapsed ? item.title : undefined}
+                    className="w-full"
+                  >
                     <NavLink
                       to={item.url}
                       end={item.url === '/admin'}
                       className={({ isActive: routeIsActive }) =>
-                        `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                        cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200",
+                          "hover:bg-accent hover:text-accent-foreground",
                           routeIsActive || isActive(item.url)
-                            ? 'bg-primary text-primary-foreground shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                        }`
+                            ? "bg-primary text-primary-foreground shadow-sm font-medium"
+                            : "text-muted-foreground"
+                        )
                       }
                     >
                       <item.icon className="h-5 w-5 flex-shrink-0" />
