@@ -240,6 +240,56 @@ class APIService {
     }
   }
 
+  async googleLogin(credential: string): Promise<LoginResponse> {
+    try {
+      console.log('🔐 Attempting Google OAuth login');
+      console.log('🎯 Full Google OAuth URL:', `${API_BASE_URL}/auth/google/`);
+      
+      // Send Google credential to backend
+      const response = await this.post<{
+        access: string;
+        refresh: string;
+        user: User;
+        created: boolean;
+      }>('/auth/google/', { credential });
+      
+      console.log('✅ Google OAuth response received:', { 
+        user: response.user,
+        created: response.created 
+      });
+      
+      // Store tokens in cookies
+      Cookies.set('access_token', response.access, {
+        expires: 1,
+        secure: false,
+        sameSite: 'lax'
+      });
+
+      Cookies.set('refresh_token', response.refresh, {
+        expires: 7,
+        secure: false,
+        sameSite: 'lax'
+      });
+      
+      console.log('✅ Google OAuth tokens stored');
+      
+      return {
+        access: response.access,
+        refresh: response.refresh,
+        user: response.user
+      };
+    } catch (error) {
+      console.error('❌ Google OAuth login failed:', error);
+      const axiosError = error as AxiosError;
+      const errorData = axiosError.response?.data as { error?: string; detail?: string };
+      const errorMessage = errorData?.error ||
+                          errorData?.detail ||
+                          axiosError.message ||
+                          'Google login failed';
+      throw new Error(errorMessage);
+    }
+  }
+
   // Course endpoints
   // Django backend endpoints
   async getCourses(searchQuery?: string): Promise<Course[]> {

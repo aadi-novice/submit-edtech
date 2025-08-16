@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { EyeIcon, EyeOffIcon, GraduationCap, Shield } from 'lucide-react';
+import GoogleLoginButton from '@/components/GoogleLoginButton';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -141,13 +142,25 @@ const Login: React.FC = () => {
                 {loading ? 'Signing In...' : 'Sign In'}
               </Button>
 
+              {/* Google Login */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                </div>
+              </div>
+
+              <GoogleLoginButton />
+
               {/* Admin Login Button */}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-card px-2 text-muted-foreground">Or</span>
+                  <span className="bg-card px-2 text-muted-foreground">Admin Access</span>
                 </div>
               </div>
 

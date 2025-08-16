@@ -144,6 +144,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     toast.success('Logged out successfully');
   };
 
+  const googleLogin = async (credential: string): Promise<boolean> => {
+    try {
+      const response = await authAPI.googleLogin(credential);
+      setUser(response.user);
+      toast.success(`Welcome ${response.user.firstName}!`);
+      return true;
+    } catch (error: unknown) {
+      const axiosError = error as { message?: string };
+      const errorMessage = axiosError.message || 'Google login failed';
+      toast.error(errorMessage);
+      return false;
+    }
+  };
+
   const forgotPassword = async (email: string): Promise<boolean> => {
     try {
       await authAPI.forgotPassword(email);
@@ -160,6 +174,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     user,
     loading,
     login,
+    googleLogin,
     register,
     logout,
     forgotPassword,

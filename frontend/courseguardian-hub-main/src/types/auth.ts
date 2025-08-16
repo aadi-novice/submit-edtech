@@ -18,6 +18,7 @@ export interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
+  googleLogin: (credential: string) => Promise<boolean>;
   register: (userData: {
     email: string;
     password: string;

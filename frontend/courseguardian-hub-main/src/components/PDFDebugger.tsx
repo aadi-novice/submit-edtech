@@ -17,7 +17,7 @@ export const PDFDebugger: React.FC = () => {
       const token = Cookies.get('access_token');
       results.hasToken = !!token;
       results.tokenPreview = token ? token.substring(0, 20) + '...' : 'None';
-      
+
       // Test getting courses
       console.log('Testing getMyCourses...');
       const courses = await authAPI.getMyCourses();
@@ -128,3 +128,6 @@ export const PDFDebugger: React.FC = () => {
     </div>
   );
 };
+
+
+

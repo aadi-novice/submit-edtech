@@ -34,23 +34,23 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, side
         {sidebar}
         
         {/* Main Content */}
-        <SidebarInset className="flex-1 flex flex-col">
+        <SidebarInset className="flex-1 flex flex-col min-w-0">
           {/* Header */}
-          <header className="h-16 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between px-4 sm:px-6 lg:px-8 sticky top-0 z-40 shadow-sm">
-            <div className="flex items-center gap-3 min-w-0">
-              <SidebarTrigger className="hover:bg-accent hover:text-accent-foreground transition-colors" />
-              <div className="flex items-center gap-2 min-w-0">
+          <header className="h-16 border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between px-4 sm:px-6 lg:px-8 shadow-sm sticky top-0 z-10">
+            <div className="flex items-center gap-4 min-w-0 flex-1">
+              <SidebarTrigger className="flex-shrink-0 hover:bg-accent hover:text-accent-foreground transition-colors" />
+              <div className="flex items-center gap-3 min-w-0 overflow-hidden">
                 <div className="flex-shrink-0">
                   <GraduationCap className="h-6 w-6 text-primary" />
                 </div>
-                <span className="font-semibold text-lg text-foreground truncate">
+                <h1 className="font-semibold text-lg text-foreground truncate">
                   Learning Platform
-                </span>
+                </h1>
               </div>
             </div>
 
             {/* User Menu */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 

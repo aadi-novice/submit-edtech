@@ -210,7 +210,7 @@ const StudentDashboard: React.FC = () => {
                       <div className="flex flex-col sm:flex-row gap-2 justify-center">
                         <Button 
                           onClick={() => navigate('/dashboard/courses')}
-                          className="bg-primary hover:bg-primary/90"
+                          className="font-bold bg-primary hover:bg-primary/90"
                         >
                           Browse Courses
                         </Button>

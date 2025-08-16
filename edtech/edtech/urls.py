@@ -30,4 +30,5 @@ urlpatterns = [
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/auth/me/', course_views.CurrentUserView.as_view(), name='current_user'),
     path('api/auth/register/', course_views.RegisterView.as_view(), name='register'),
+    path('accounts/', include('allauth.urls')),  # Allauth URLs for OAuth
 ]

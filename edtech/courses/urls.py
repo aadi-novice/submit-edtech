@@ -2,6 +2,7 @@ from django.urls import path, include
 from . import views
 from .debug_views import debug_token_view
 from .simple_test_view import simple_test_view
+from .google_auth import google_oauth_login, google_oauth_status
 from rest_framework import routers
 from .api import CourseViewSet, LessonViewSet, LessonPDFViewSet
 
@@ -23,5 +24,7 @@ urlpatterns = [
     path("proxy-pdf/<int:pdf_id>", views.proxy_pdf_view, name="proxy_pdf_view"),
     path("debug-pdf/", views.debug_pdf_access, name="debug_pdf_access"),
     path("debug-token/", debug_token_view, name="debug_token_view"),
+    path("auth/google/", google_oauth_login, name="google_oauth_login"),
+    path("auth/google/status/", google_oauth_status, name="google_oauth_status"),
     path("", include(router.urls)),
 ]
