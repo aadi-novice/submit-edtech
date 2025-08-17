@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view, permission_classes
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from .models import Lesson
+from .models import Lesson, LessonVideo, LessonProgress
 from .storage import signed_url, verify_pdf_access
 from django.http import HttpResponse, Http404, FileResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -18,6 +18,8 @@ from django.utils.decorators import method_decorator
 import os
 import mimetypes
 from django.http import StreamingHttpResponse
+import re
+from django.db import transaction
 
 
 
@@ -398,3 +400,321 @@ def lesson_view(request, lesson_id):
     pdf_signed = signed_url(lesson.pdf_path, expires_sec=60) if lesson.pdf_path else None
     wm_text = f"{request.user.username or request.user.email} • {timezone.now().strftime('%Y-%m-%d %H:%M')}"
     return render(request, "courses/lesson_view.html", {"lesson": lesson, "pdf_url": pdf_signed, "wm_text": wm_text})
+
+
+# ================== VIDEO VIEWS ==================
+
+@csrf_exempt
+def proxy_video_view(request, video_id):
+    """
+    Secure video proxy similar to PDF proxy
+    Serves videos with authentication and watermarking
+    """
+    print(f"🔍 proxy_video_view called with video_id={video_id}")
+    print(f"🔍 Request method: {request.method}")
+    print(f"🔍 Request path: {request.path}")
+    
+    if request.method != 'GET':
+        print(f"❌ Invalid method: {request.method}")
+        raise Http404("Method not allowed")
+    
+    # Get user from JWT token in header, query parameter, or cookies
+    auth_header = request.META.get('HTTP_AUTHORIZATION')
+    token = None
+    user = None
+    
+    print(f"🔍 Auth header: {auth_header}")
+    print(f"🔍 Cookies: {request.COOKIES}")
+    
+    # Try to get token from Authorization header
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        print(f"🔍 Token from header: {token[:20]}...")
+    
+    # Try to get token from query parameter
+    if not token:
+        token = request.GET.get('token')
+        if token:
+            print(f"🔍 Token from query: {token[:20]}...")
+    
+    # Try to get token from cookies
+    if not token:
+        token = request.COOKIES.get('access_token') or request.COOKIES.get('accessToken')
+        if token:
+            print(f"🔍 Token from cookies: {token[:20]}...")
+    
+    if not token:
+        print("❌ No token found in header, query, or cookies")
+        return HttpResponse('Unauthorized', status=401)
+    
+    # Verify JWT token and get user
+    try:
+        from rest_framework_simplejwt.tokens import AccessToken
+        from django.contrib.auth.models import User
+        
+        access_token = AccessToken(token)
+        user_id = access_token.payload['user_id']
+        user = User.objects.get(id=user_id)
+        print(f"✅ Authenticated user: {user.username or user.email}")
+        
+    except Exception as e:
+        print(f"❌ Token verification failed: {str(e)}")
+        return HttpResponse('Unauthorized', status=401)
+    
+    try:
+        # Get the video object
+        video = get_object_or_404(LessonVideo, id=video_id)
+        
+        # Check if user has access to this video's course
+        from .enrollment import Enrollment
+        has_access = Enrollment.objects.filter(
+            user=user, 
+            course=video.lesson.course
+        ).exists()
+        
+        if not has_access and not user.is_staff:
+            raise Http404("Video not found or access denied")
+        
+        # Check if video exists in Supabase or local storage
+        if video.video_path:
+            # Try Supabase first
+            try:
+                video_url = signed_url(video.video_path, expires_sec=300)  # 5 minutes
+                if not video_url:
+                    raise Exception("Failed to generate signed URL")
+                
+                def stream_video():
+                    import requests
+                    response = requests.get(video_url, stream=True)
+                    response.raise_for_status()
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            yield chunk
+                
+                # Determine content type
+                content_type = f"video/{video.video_format}" if video.video_format else "video/mp4"
+                
+                response = StreamingHttpResponse(
+                    stream_video(),
+                    content_type=content_type
+                )
+                
+                # Handle range requests for video seeking
+                range_header = request.META.get('HTTP_RANGE')
+                if range_header:
+                    response['Accept-Ranges'] = 'bytes'
+                
+            except Exception as e:
+                print(f"❌ Supabase video access failed: {str(e)}")
+                raise Http404("Video not accessible from Supabase")
+        
+        elif video.video_file:
+            # Fallback to local file
+            video_path = video.video_file.path
+            if not os.path.exists(video_path):
+                raise Http404("Video file not found")
+            
+            # Handle range requests for video seeking
+            range_header = request.META.get('HTTP_RANGE')
+            file_size = os.path.getsize(video_path)
+            
+            if range_header:
+                # Parse range header
+                range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+                if range_match:
+                    start = int(range_match.group(1))
+                    end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+                    
+                    # Create file iterator that properly handles file opening/closing
+                    def file_iterator():
+                        with open(video_path, 'rb') as video_file:
+                            video_file.seek(start)
+                            remaining = end - start + 1
+                            chunk_size = 8192
+                            
+                            while remaining > 0:
+                                chunk = video_file.read(min(chunk_size, remaining))
+                                if not chunk:
+                                    break
+                                remaining -= len(chunk)
+                                yield chunk
+                        
+                    response = StreamingHttpResponse(
+                        file_iterator(),
+                        status=206,  # Partial Content
+                        content_type=mimetypes.guess_type(video_path)[0] or 'video/mp4'
+                    )
+                    response['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+                    response['Content-Length'] = str(end - start + 1)
+                    response['Accept-Ranges'] = 'bytes'
+                else:
+                    # Invalid range header
+                    response = HttpResponse(status=416)  # Range Not Satisfiable
+            else:
+                # No range header, serve entire file
+                response = FileResponse(
+                    open(video_path, 'rb'),
+                    content_type=mimetypes.guess_type(video_path)[0] or 'video/mp4'
+                )
+                response['Content-Length'] = str(file_size)
+                response['Accept-Ranges'] = 'bytes'
+        else:
+            raise Http404("No video file found")
+        
+    except LessonVideo.DoesNotExist:
+        raise Http404("Video not found")
+    except Exception as e:
+        print(f"❌ Video proxy error: {str(e)}")
+        raise Http404(f"Error serving video: {str(e)}")
+    
+    # Add security headers
+    response['X-Content-Type-Options'] = 'nosniff'
+    
+    # Add CORS headers for frontend
+    origin = request.META.get('HTTP_ORIGIN')
+    allowed_origins = [
+        'http://localhost:3000',
+        'http://localhost:3001', 
+        'http://localhost:3002',
+        'http://localhost:3003',
+        'http://localhost:3004',
+        'http://localhost:5173'
+    ]
+    if origin in allowed_origins:
+        response['Access-Control-Allow-Origin'] = origin
+    else:
+        response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, Range'
+    response['Access-Control-Allow-Methods'] = 'GET'
+    
+    # Add user tracking headers
+    response['X-User-ID'] = str(user.id)
+    response['X-User-Name'] = user.username or user.email
+    response['X-Access-Time'] = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    return response
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_video_progress(request, video_id):
+    """
+    Update user's video watching progress
+    Expected payload: {
+        "current_time": 120,  // seconds
+        "duration": 300,      // total duration in seconds
+        "completed": false    // optional
+    }
+    """
+    user = request.user
+    
+    try:
+        video = get_object_or_404(LessonVideo, id=video_id)
+        
+        # Check access permissions
+        from .enrollment import Enrollment
+        has_access = Enrollment.objects.filter(
+            user=user, 
+            course=video.lesson.course
+        ).exists()
+        
+        if not has_access and not user.is_staff:
+            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get progress data
+        current_time = request.data.get('current_time', 0)
+        duration = request.data.get('duration', 0)
+        force_completed = request.data.get('completed', False)
+        
+        # Calculate percentage watched
+        watched_percentage = (current_time / duration * 100) if duration > 0 else 0
+        
+        # Determine if video is completed (90% threshold or force_completed)
+        is_completed = force_completed or watched_percentage >= 90
+        
+        # Update or create progress record
+        with transaction.atomic():
+            progress, created = LessonProgress.objects.get_or_create(
+                user=user,
+                lesson_video=video,
+                defaults={
+                    'video_progress_seconds': int(current_time),
+                    'video_watched_percentage': watched_percentage,
+                    'is_completed': is_completed,
+                    'completed_at': timezone.now() if is_completed else None
+                }
+            )
+            
+            if not created:
+                # Update existing progress
+                progress.video_progress_seconds = int(current_time)
+                progress.video_watched_percentage = watched_percentage
+                
+                # Only mark as completed if not already completed
+                if not progress.is_completed and is_completed:
+                    progress.is_completed = True
+                    progress.completed_at = timezone.now()
+                
+                progress.save()
+        
+        return Response({
+            'success': True,
+            'progress': {
+                'current_time': progress.video_progress_seconds,
+                'watched_percentage': progress.video_watched_percentage,
+                'is_completed': progress.is_completed,
+                'completed_at': progress.completed_at.isoformat() if progress.completed_at else None
+            }
+        })
+        
+    except LessonVideo.DoesNotExist:
+        return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        print(f"❌ Error updating video progress: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_video_progress(request, video_id):
+    """
+    Get user's current progress for a video
+    """
+    user = request.user
+    
+    try:
+        video = get_object_or_404(LessonVideo, id=video_id)
+        
+        # Check access permissions
+        from .enrollment import Enrollment
+        has_access = Enrollment.objects.filter(
+            user=user, 
+            course=video.lesson.course
+        ).exists()
+        
+        if not has_access and not user.is_staff:
+            return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            progress = LessonProgress.objects.get(user=user, lesson_video=video)
+            return Response({
+                'current_time': progress.video_progress_seconds,
+                'watched_percentage': progress.video_watched_percentage,
+                'is_completed': progress.is_completed,
+                'completed_at': progress.completed_at.isoformat() if progress.completed_at else None,
+                'last_accessed': progress.last_accessed.isoformat() if progress.last_accessed else None
+            })
+        except LessonProgress.DoesNotExist:
+            return Response({
+                'current_time': 0,
+                'watched_percentage': 0.0,
+                'is_completed': False,
+                'completed_at': None,
+                'last_accessed': None
+            })
+            
+    except LessonVideo.DoesNotExist:
+        return Response({'error': 'Video not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        print(f"❌ Error getting video progress: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -46,23 +46,60 @@ class LessonPDF(models.Model):
         return f"{self.lesson} — {self.title}"
 
 
+class LessonVideo(models.Model):
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="videos")
+    title = models.CharField(max_length=200)
+    video_file = models.FileField(upload_to='lesson_videos/', blank=True, null=True)
+    video_path = models.CharField(max_length=500, blank=True)  # Supabase path, auto-filled
+    thumbnail_path = models.CharField(max_length=500, blank=True)  # Supabase thumbnail path
+    duration = models.DurationField(blank=True, null=True)  # Video duration
+    file_size = models.BigIntegerField(default=0)  # File size in bytes
+    video_format = models.CharField(max_length=10, default='mp4')  # Video format
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.lesson} — {self.title}"
+
+    class Meta:
+        verbose_name = "Lesson Video"
+        verbose_name_plural = "Lesson Videos"
+
+
 class LessonProgress(models.Model):
-    """Track individual lesson/PDF completion by users"""
+    """Track individual lesson/PDF/Video completion by users"""
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    lesson_pdf = models.ForeignKey(LessonPDF, on_delete=models.CASCADE)
+    lesson_pdf = models.ForeignKey(LessonPDF, on_delete=models.CASCADE, null=True, blank=True)
+    lesson_video = models.ForeignKey(LessonVideo, on_delete=models.CASCADE, null=True, blank=True)
     is_completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
     last_accessed = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Video-specific progress tracking
+    video_progress_seconds = models.IntegerField(default=0)  # Current position in seconds
+    video_watched_percentage = models.FloatField(default=0.0)  # Percentage watched
 
     class Meta:
-        unique_together = ('user', 'lesson_pdf')
+        unique_together = [
+            ('user', 'lesson_pdf'),
+            ('user', 'lesson_video')
+        ]
         verbose_name = "Lesson Progress"
         verbose_name_plural = "Lesson Progress"
 
     def __str__(self):
+        content_type = "PDF" if self.lesson_pdf else "Video"
+        content_name = self.lesson_pdf or self.lesson_video
         status = "Completed" if self.is_completed else "In Progress"
-        return f"{self.user} - {self.lesson_pdf} ({status})"
+        return f"{self.user} - {content_name} ({content_type} - {status})"
+
+    def save(self, *args, **kwargs):
+        # Ensure only one of lesson_pdf or lesson_video is set
+        if self.lesson_pdf and self.lesson_video:
+            raise ValueError("Cannot track both PDF and Video in the same progress record")
+        if not self.lesson_pdf and not self.lesson_video:
+            raise ValueError("Must specify either lesson_pdf or lesson_video")
+        super().save(*args, **kwargs)
 
 
 class CourseProgress(models.Model):
@@ -79,12 +116,14 @@ class CourseProgress(models.Model):
         verbose_name_plural = "Course Progress"
 
     def calculate_progress(self):
-        """Calculate progress based on completed lesson PDFs"""
-        # Get all PDFs in this course
+        """Calculate progress based on completed lesson PDFs and Videos"""
+        # Get all PDFs and Videos in this course
         course_pdfs = LessonPDF.objects.filter(lesson__course=self.course)
-        total_pdfs = course_pdfs.count()
+        course_videos = LessonVideo.objects.filter(lesson__course=self.course)
         
-        if total_pdfs == 0:
+        total_content = course_pdfs.count() + course_videos.count()
+        
+        if total_content == 0:
             self.progress_percentage = 0.0
         else:
             # Count completed PDFs for this user
@@ -94,7 +133,15 @@ class CourseProgress(models.Model):
                 is_completed=True
             ).count()
             
-            self.progress_percentage = (completed_pdfs / total_pdfs) * 100
+            # Count completed Videos for this user
+            completed_videos = LessonProgress.objects.filter(
+                user=self.user,
+                lesson_video__in=course_videos,
+                is_completed=True
+            ).count()
+            
+            total_completed = completed_pdfs + completed_videos
+            self.progress_percentage = (total_completed / total_content) * 100
         
         self.save()
         return self.progress_percentage

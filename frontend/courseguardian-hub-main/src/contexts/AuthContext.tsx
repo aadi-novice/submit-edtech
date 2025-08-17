@@ -170,6 +170,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const getToken = (): string | undefined => {
+    return Cookies.get('access_token');
+  };
+
   const value: AuthContextType = {
     user,
     loading,
@@ -178,6 +182,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     register,
     logout,
     forgotPassword,
+    getToken,
     isAuthenticated: !!user && !loading
   };
 

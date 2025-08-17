@@ -29,6 +29,7 @@ export interface AuthContextType {
   }) => Promise<{ success: boolean; errors?: Record<string, string[]> }>;
   logout: () => void;
   forgotPassword: (email: string) => Promise<boolean>;
+  getToken: () => string | undefined;
   isAuthenticated: boolean;
 }
 

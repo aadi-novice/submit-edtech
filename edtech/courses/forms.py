@@ -1,5 +1,5 @@
 from django import forms
-from .models import Lesson, Course
+from .models import Lesson, Course, LessonVideo
 from .storage import upload_bytes
 
 class SupabasePDFUploadForm(forms.Form):
@@ -21,3 +21,25 @@ class SupabasePDFUploadForm(forms.Form):
             pdf_path=path_in_bucket
         )
         return lesson
+
+
+class SupabaseVideoUploadForm(forms.Form):
+    lesson = forms.ModelChoiceField(queryset=Lesson.objects.all())
+    title = forms.CharField(max_length=200)
+    video_file = forms.FileField(
+        help_text="Supported formats: MP4, WebM, OGG, AVI, MOV"
+    )
+
+    def save(self):
+        lesson = self.cleaned_data['lesson']
+        title = self.cleaned_data['title']
+        video_file = self.cleaned_data['video_file']
+        
+        # Create LessonVideo instance
+        # The signal will automatically handle Supabase upload
+        lesson_video = LessonVideo.objects.create(
+            lesson=lesson,
+            title=title,
+            video_file=video_file
+        )
+        return lesson_video
