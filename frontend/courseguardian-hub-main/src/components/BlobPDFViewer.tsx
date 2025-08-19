@@ -123,7 +123,7 @@ export const BlobPDFViewer: React.FC<BlobPDFViewerProps> = ({
         -webkit-tap-highlight-color: transparent !important;
       }
       
-      /* PDF Container - Allow interaction */
+      /* PDF Container - Hide toolbar and controls */
       .pdf-iframe-container {
         position: relative;
         overflow: hidden;
@@ -133,13 +133,30 @@ export const BlobPDFViewer: React.FC<BlobPDFViewerProps> = ({
         width: 100% !important;
         height: 100% !important;
         border: none;
-        /* Allow all interactions on the PDF itself */
         pointer-events: auto !important;
         -webkit-user-drag: none !important;
         -khtml-user-drag: none !important;
         -moz-user-drag: none !important;
         -o-user-drag: none !important;
         user-drag: none !important;
+      }
+
+      /* Hide PDF toolbar and download buttons */
+      .pdf-iframe-container iframe::-webkit-scrollbar {
+        display: none;
+      }
+      
+      /* Try to hide PDF.js toolbar */
+      .pdf-iframe-container::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 32px;
+        background: linear-gradient(to bottom, rgba(255,255,255,0.9), transparent);
+        pointer-events: none;
+        z-index: 10;
       }
       
       /* Disable print styles */
@@ -293,36 +310,10 @@ export const BlobPDFViewer: React.FC<BlobPDFViewerProps> = ({
   return (
     <div className={`border rounded-lg overflow-hidden secure-pdf-viewer ${className}`}>
       {/* Enhanced Security Header */}
-      <div className="bg-green-50 border-b border-green-200 p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-green-600" />
-            <span className="text-sm font-medium text-green-700">SECURE NAVIGATION MODE</span>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-green-600">
-            <span className="flex items-center gap-1">
-              <Eye className="h-3 w-3" />
-              SCROLLING ENABLED
-            </span>
-            <span>📜 ← → NAVIGATION</span>
-            <span>🔍 ZOOM OK</span>
-            <span>🚫 NO DOWNLOAD</span>
-            {attempts > 0 && (
-              <span className="flex items-center gap-1 text-red-800 font-bold">
-                <AlertTriangle className="h-3 w-3" />
-                {attempts} VIOLATION{attempts !== 1 ? 'S' : ''}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="mt-1">
-          <h3 className="text-sm font-medium text-gray-800">{title}</h3>
-          <p className="text-xs text-gray-600">📜 Full PDF navigation enabled - Use scroll, arrow keys, or navigation buttons</p>
-        </div>
-      </div>
+      
 
       {/* Navigation Controls */}
-      <div className="bg-gray-50 border-b border-gray-200 p-2 flex items-center justify-center gap-4">
+      {/* <div className="bg-gray-50 border-b border-gray-200 p-2 flex items-center justify-center gap-4">
         <button
           onClick={navigatePrevious}
           className="flex items-center gap-1 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
@@ -340,7 +331,7 @@ export const BlobPDFViewer: React.FC<BlobPDFViewerProps> = ({
           Next Page
           <ChevronRight className="h-4 w-4" />
         </button>
-      </div>
+      </div> */}
       
       {/* PDF Content */}
       <div className="relative w-full h-96 pdf-iframe-container">
@@ -348,7 +339,7 @@ export const BlobPDFViewer: React.FC<BlobPDFViewerProps> = ({
           <>
             <iframe
               ref={setIframeRef}
-              src={blobUrl}
+              src={`${blobUrl}#toolbar=0&navpanes=0&scrollbar=1&zoom=100`}
               className="w-full h-full border-0"
               title={title}
               onLoad={() => console.log('✅ Secure blob iframe loaded successfully with navigation enabled')}
@@ -384,43 +375,7 @@ export const BlobPDFViewer: React.FC<BlobPDFViewerProps> = ({
         )}
       </div>
 
-      {/* Enhanced Security Footer */}
-      <div className="bg-green-50 border-t border-green-200 p-3">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 text-green-600 font-medium">
-            <Eye className="h-3 w-3" />
-            <span>📜 NAVIGATION ENABLED: Scrolling, arrow keys, and zoom controls available</span>
-          </div>
-          {watermark ? (
-            <div className="flex items-center gap-1 text-green-700">
-              <User className="h-3 w-3" />
-              <Clock className="h-3 w-3" />
-              <span className="font-bold">{watermark}</span>
-            </div>
-          ) : userId && (
-            <span className="text-green-700 font-bold">🔍 Tracked: User {userId}</span>
-          )}
-        </div>
-        
-        {attempts > 0 && (
-          <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded">
-            <div className="text-center text-xs text-red-800 font-bold">
-              🚨 SECURITY ALERT: {attempts} violation{attempts !== 1 ? 's' : ''} detected
-            </div>
-            {attempts > 3 && (
-              <div className="mt-1 text-xs text-red-900 font-bold text-center">
-                ⚠️ EXCESSIVE VIOLATIONS: Access session may be terminated
-              </div>
-            )}
-          </div>
-        )}
-        
-        <div className="mt-2 text-center text-xs text-gray-600">
-          <span className="bg-gray-100 px-2 py-1 rounded">
-            🔐 Protected Document - Navigation enabled, download blocked - Unauthorized access attempts are logged
-          </span>
-        </div>
-      </div>
+      
     </div>
   );
 };
