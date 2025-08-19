@@ -355,7 +355,7 @@ const CourseView: React.FC = () => {
                     <BlobPDFViewer
                       pdfUrl={pdfUrl}
                       title={selectedContent.item.title}
-                      className="h-96"
+                      className="h-200"
                     />
                   ) : selectedContent.type === 'video' && videoUrl ? (
                     <VideoPlayer
@@ -430,6 +430,8 @@ const CourseView: React.FC = () => {
                 </CardContent>
               </Card>
             )}
+          
+          
           </div>
         </div>
       </div>

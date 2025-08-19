@@ -24,78 +24,37 @@ def upload_bytes(bucket_path, data):
     if not SUPABASE_AVAILABLE or not _client:
         print("❌ Supabase client not available")
         return None
-    
+
     # Get bucket name from settings
     bucket_name = getattr(settings, 'SUPABASE_BUCKET', 'courses')
-    
+
+    # Check if bucket exists, try to create if not
     try:
-        print(f"🔍 Attempting to upload to bucket: {bucket_name}")
+        try:
+            _client.storage.from_(bucket_name).list()
+        except Exception as bucket_exc:
+            print(f"⚠️ Bucket '{bucket_name}' not found or not accessible: {bucket_exc}")
+            try:
+                _client.storage.create_bucket(bucket_name, public=False)
+                print(f"✅ Created bucket '{bucket_name}'")
+            except Exception as create_exc:
+                print(f"❌ Could not create bucket '{bucket_name}': {create_exc}")
+                return None
+    except Exception as e:
+        print(f"❌ Supabase bucket check failed: {e}")
+        return None
+
+    try:
+        print(f"� Attempting to upload to bucket: {bucket_name}")
         print(f"🔍 Attempting to upload to bucket_path: {bucket_path}")
         print(f"🔍 Data type: {type(data)}, Data size: {len(data) if hasattr(data, '__len__') else 'unknown'}")
-        
-        # Method 1: Try with file_options parameter
-        try:
-            print("🔄 Trying upload with file_options...")
-            result = _client.storage.from_(bucket_name).upload(
-                path=bucket_path,
-                file=data,
-                file_options={"upsert": True}
-            )
-            print(f"✅ Upload successful with file_options: {result}")
-            return result
-        except Exception as e1:
-            print(f"❌ Upload with file_options failed: {e1}")
-            print(f"❌ Error type: {type(e1)}")
-            
-            # Method 2: Try without file_options
-            try:
-                print("🔄 Trying upload without file_options...")
-                result = _client.storage.from_(bucket_name).upload(
-                    path=bucket_path,
-                    file=data
-                )
-                print(f"✅ Upload successful without file_options: {result}")
-                return result
-            except Exception as e2:
-                print(f"❌ Upload without file_options failed: {e2}")
-                print(f"❌ Error type: {type(e2)}")
-                
-                # Method 3: Try with different parameter names
-                try:
-                    print("🔄 Trying upload with upsert parameter...")
-                    result = _client.storage.from_(bucket_name).upload(
-                        file=data,
-                        path=bucket_path,
-                        upsert=True
-                    )
-                    print(f"✅ Upload successful with upsert parameter: {result}")
-                    return result
-                except Exception as e3:
-                    print(f"❌ Upload with upsert parameter failed: {e3}")
-                    print(f"❌ Error type: {type(e3)}")
-                    
-                    # Method 4: Try with update if exists
-                    try:
-                        print("🔄 Trying update if file exists...")
-                        result = _client.storage.from_(bucket_name).update(
-                            path=bucket_path,
-                            file=data
-                        )
-                        print(f"✅ Update successful: {result}")
-                        return result
-                    except Exception as e4:
-                        print(f"❌ Update failed: {e4}")
-                        print(f"❌ Error type: {type(e4)}")
-                        
-                        # Final attempt: basic upload
-                        print("🔄 Final attempt with basic upload...")
-                        result = _client.storage.from_(bucket_name).upload(bucket_path, data)
-                        print(f"✅ Basic upload successful: {result}")
-                        return result
-    
+
+        # Use the most compatible upload call for storage3
+        result = _client.storage.from_(bucket_name).upload(bucket_path, data)
+        print(f"✅ Upload successful: {result}")
+        return result
     except Exception as e:
-        print(f"❌ All upload methods failed. Final error: {e}")
-        print(f"❌ Error type: {type(e)}")
+        print(f"❌ Upload failed. Error: {e}")
         import traceback
         print(f"❌ Full traceback: {traceback.format_exc()}")
         return None
