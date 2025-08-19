@@ -370,6 +370,37 @@ class APIService {
       return false;
     }
   }
+
+  // Video progress tracking methods
+  async updateVideoProgress(videoId: number, progressData: {
+    current_time: number;
+    duration: number;
+    completed: boolean;
+  }): Promise<{
+    message: string;
+    current_time: number;
+    watched_percentage: number;
+    is_completed: boolean;
+    completed_at: string | null;
+  }> {
+    return this.post<{
+      message: string;
+      current_time: number;
+      watched_percentage: number;
+      is_completed: boolean;
+      completed_at: string | null;
+    }>(`/lessonvideos/${videoId}/update_progress/`, progressData);
+  }
+
+  async markVideoAccessed(videoId: number): Promise<{
+    message: string;
+    streaming_url: string;
+  }> {
+    return this.get<{
+      message: string;
+      streaming_url: string;
+    }>(`/lessonvideos/${videoId}/stream_video/`);
+  }
 }
 
 export const authAPI = new APIService();

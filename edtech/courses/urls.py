@@ -4,7 +4,7 @@ from .debug_views import debug_token_view
 from .simple_test_view import simple_test_view
 from .google_auth import google_oauth_login, google_oauth_status
 from rest_framework import routers
-from .api import CourseViewSet, LessonViewSet, LessonPDFViewSet, LessonVideoViewSet
+from .api import CourseViewSet, LessonViewSet, LessonPDFViewSet, LessonVideoViewSet, MCQQuestionViewSet, MCQProgressViewSet, MCQAttemptViewSet
 
 # Simple test function to verify URL routing
 def test_proxy_view(request, pdf_id):
@@ -16,6 +16,9 @@ router.register(r'courses', CourseViewSet)
 router.register(r'lessons', LessonViewSet)
 router.register(r'lessonpdfs', LessonPDFViewSet)
 router.register(r'lessonvideos', LessonVideoViewSet)
+router.register(r'mcq-questions', MCQQuestionViewSet)
+router.register(r'mcq-progress', MCQProgressViewSet)
+router.register(r'mcq-attempts', MCQAttemptViewSet)
 
 urlpatterns = [
     path("", views.home, name="home"),

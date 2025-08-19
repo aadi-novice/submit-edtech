@@ -17,30 +17,41 @@ def upload_pdf_to_supabase(sender, instance, created, **kwargs):
     if instance.pdf_file and not instance.pdf_path:
         try:
             # Read PDF file content
+            print(f"🔍 Opening PDF file: {instance.pdf_file.name}")
             instance.pdf_file.open()
             pdf_data = instance.pdf_file.read()
             instance.pdf_file.close()
+            print(f"🔍 PDF data size: {len(pdf_data)} bytes")
             
             # Generate Supabase path
             file_extension = os.path.splitext(instance.pdf_file.name)[1]
             supabase_path = f"lesson_pdfs/{instance.lesson.course.id}/{instance.id}_{instance.title.replace(' ', '_')}{file_extension}"
+            print(f"🔍 Generated Supabase path: {supabase_path}")
             
             # Upload to Supabase
             print(f"🔄 Uploading PDF to Supabase: {supabase_path}")
-            upload_bytes(supabase_path, pdf_data)
+            result = upload_bytes(supabase_path, pdf_data)
             
-            # Update the instance with Supabase path
-            instance.pdf_path = supabase_path
-            
-            # Save without triggering signal again
-            LessonPDF.objects.filter(id=instance.id).update(
-                pdf_path=instance.pdf_path
-            )
-            
-            print(f"✅ PDF uploaded successfully to Supabase: {supabase_path}")
+            if result:
+                print(f"🔍 Upload result: {result}")
+                
+                # Update the instance with Supabase path
+                instance.pdf_path = supabase_path
+                
+                # Save without triggering signal again
+                LessonPDF.objects.filter(id=instance.id).update(
+                    pdf_path=instance.pdf_path
+                )
+                
+                print(f"✅ PDF uploaded successfully to Supabase: {supabase_path}")
+            else:
+                print(f"❌ Upload failed - no result returned")
             
         except Exception as e:
             print(f"❌ Failed to upload PDF to Supabase: {e}")
+            print(f"❌ Error type: {type(e)}")
+            import traceback
+            print(f"❌ Full traceback: {traceback.format_exc()}")
             # Still allow the model to save even if Supabase upload fails
 
 @receiver(post_save, sender=LessonVideo)

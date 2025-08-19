@@ -327,14 +327,28 @@ def proxy_pdf_view(request, pdf_id):
             raise Exception("Supabase not available")
             
     except Exception as e:
-        # Fallback to local file
-        local_path = os.path.join(settings.BASE_DIR, pdf.pdf_path)
-        if os.path.exists(local_path):
-            response = FileResponse(
-                open(local_path, 'rb'),
-                content_type='application/pdf'
-            )
+        print(f"❌ Supabase failed: {e}")
+        # Fallback to local file using pdf_file field
+        if pdf.pdf_file:
+            try:
+                # Use the local file path
+                local_path = pdf.pdf_file.path
+                print(f"🔄 Trying local file: {local_path}")
+                
+                if os.path.exists(local_path):
+                    response = FileResponse(
+                        open(local_path, 'rb'),
+                        content_type='application/pdf'
+                    )
+                    print(f"✅ Serving local file: {local_path}")
+                else:
+                    print(f"❌ Local file not found: {local_path}")
+                    raise Http404("PDF file not found locally")
+            except Exception as local_err:
+                print(f"❌ Local file error: {local_err}")
+                raise Http404("PDF file not accessible")
         else:
+            print("❌ No local file available")
             raise Http404("PDF file not found")
     else:
         # Fetch PDF from Supabase and stream it

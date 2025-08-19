@@ -2,7 +2,10 @@
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import PDFDocument, Course, Lesson, LessonPDF, LessonVideo, LessonProgress, CourseProgress
+from .models import (
+    PDFDocument, Course, Lesson, LessonPDF, LessonVideo, LessonProgress, CourseProgress,
+    MCQQuestion, MCQOption, MCQAttempt, MCQProgress
+)
 from .enrollment import Enrollment
 from .profile import Profile
 
@@ -43,7 +46,7 @@ class CourseAdmin(admin.ModelAdmin):
         return Enrollment.objects.filter(course=obj).count()
     enrollment_count.short_description = 'Enrollments'
 
-# Enhanced Lesson Admin with PDF and Video management
+# Enhanced Lesson Admin with PDF, Video, and MCQ management
 class LessonPDFInline(admin.TabularInline):
     model = LessonPDF
     extra = 1
@@ -56,11 +59,17 @@ class LessonVideoInline(admin.TabularInline):
     fields = ('title', 'video_file', 'duration', 'file_size', 'uploaded_at')
     readonly_fields = ('uploaded_at', 'file_size', 'duration')
 
+class MCQQuestionInline(admin.TabularInline):
+    model = MCQQuestion
+    extra = 1
+    fields = ('question_text', 'order', 'points')
+    ordering = ('order',)
+
 class LessonAdmin(admin.ModelAdmin):
-    list_display = ('title', 'course', 'pdf_count', 'video_count', 'created_at')
+    list_display = ('title', 'course', 'pdf_count', 'video_count', 'mcq_count', 'created_at')
     list_filter = ('course', 'created_at')
     search_fields = ('title', 'course__title')
-    inlines = [LessonPDFInline, LessonVideoInline]
+    inlines = [LessonPDFInline, LessonVideoInline, MCQQuestionInline]
     
     def pdf_count(self, obj):
         return obj.pdfs.count()
@@ -69,6 +78,10 @@ class LessonAdmin(admin.ModelAdmin):
     def video_count(self, obj):
         return obj.videos.count()
     video_count.short_description = 'Videos'
+    
+    def mcq_count(self, obj):
+        return obj.mcq_questions.count()
+    mcq_count.short_description = 'MCQs'
 
 # Enhanced LessonPDF Admin
 class LessonPDFAdmin(admin.ModelAdmin):
@@ -178,6 +191,54 @@ class PDFDocumentAdmin(admin.ModelAdmin):
     list_filter = ('uploaded_at',)
     search_fields = ('title',)
 
+# MCQ Management Admins
+class MCQOptionInline(admin.TabularInline):
+    model = MCQOption
+    extra = 4  # Standard 4 options for MCQs
+    fields = ('option_text', 'is_correct', 'order')
+    ordering = ('order',)
+
+class MCQQuestionAdmin(admin.ModelAdmin):
+    list_display = ('get_question_preview', 'lesson', 'order', 'points', 'success_rate', 'total_attempts')
+    list_filter = ('lesson__course', 'lesson', 'points')
+    search_fields = ('question_text', 'lesson__title', 'lesson__course__title')
+    ordering = ('lesson', 'order')
+    inlines = [MCQOptionInline]
+    
+    def get_question_preview(self, obj):
+        return obj.question_text[:60] + "..." if len(obj.question_text) > 60 else obj.question_text
+    get_question_preview.short_description = 'Question'
+
+class MCQAttemptAdmin(admin.ModelAdmin):
+    list_display = ('user', 'get_question_preview', 'get_lesson', 'is_correct', 'points_earned', 'attempt_number', 'attempted_at')
+    list_filter = ('is_correct', 'question__lesson__course', 'question__lesson', 'attempted_at')
+    search_fields = ('user__username', 'user__email', 'question__question_text')
+    readonly_fields = ('is_correct', 'points_earned')
+    date_hierarchy = 'attempted_at'
+    
+    def get_question_preview(self, obj):
+        return obj.question.question_text[:40] + "..." if len(obj.question.question_text) > 40 else obj.question.question_text
+    get_question_preview.short_description = 'Question'
+    
+    def get_lesson(self, obj):
+        return obj.question.lesson.title
+    get_lesson.short_description = 'Lesson'
+
+class MCQProgressAdmin(admin.ModelAdmin):
+    list_display = ('user', 'lesson', 'completion_percentage', 'score_percentage', 'questions_attempted', 'total_questions', 'is_completed', 'last_updated')
+    list_filter = ('is_completed', 'lesson__course', 'lesson')
+    search_fields = ('user__username', 'user__email', 'lesson__title')
+    readonly_fields = ('total_questions', 'questions_attempted', 'questions_correct', 'total_points_possible', 'total_points_earned', 'completion_percentage', 'score_percentage')
+    date_hierarchy = 'last_updated'
+    
+    actions = ['recalculate_progress']
+    
+    def recalculate_progress(self, request, queryset):
+        for progress in queryset:
+            progress.calculate_progress()
+        self.message_user(request, f"Recalculated progress for {queryset.count()} record(s).")
+    recalculate_progress.short_description = "Recalculate progress"
+
 # Re-register User with enhanced admin
 admin.site.unregister(User)
 admin.site.register(User, UserAdmin)
@@ -192,6 +253,11 @@ admin.site.register(LessonVideo, LessonVideoAdmin)
 admin.site.register(Enrollment, EnrollmentAdmin)
 admin.site.register(LessonProgress, LessonProgressAdmin)
 admin.site.register(CourseProgress, CourseProgressAdmin)
+
+# Register MCQ models
+admin.site.register(MCQQuestion, MCQQuestionAdmin)
+admin.site.register(MCQAttempt, MCQAttemptAdmin)
+admin.site.register(MCQProgress, MCQProgressAdmin)
 
 # Customize admin site headers
 admin.site.site_header = "CourseGuardian Admin Panel"

@@ -167,7 +167,13 @@ const CourseView: React.FC = () => {
         setPdfUrl(null);
         setWatermark(`${user?.username || user?.email} • ${new Date().toLocaleDateString()}`);
         
-        // Video progress will be tracked by the VideoPlayer component
+        // Mark video as accessed to create initial progress record
+        try {
+          await authAPI.markVideoAccessed(item.id);
+          console.log('✅ Video marked as accessed');
+        } catch (progressErr) {
+          console.warn('⚠️ Failed to track video access:', progressErr);
+        }
       }
     } catch (err) {
       console.error('❌ Error loading content:', err);
@@ -357,11 +363,36 @@ const CourseView: React.FC = () => {
                       videoUrl={videoUrl}
                       title={selectedContent.item.title}
                       className="w-full"
-                      onProgress={(currentTime, duration) => {
+                      onProgress={async (currentTime, duration) => {
                         console.log(`Video progress: ${currentTime}/${duration}`);
+                        
+                        // Save progress to backend every 10 seconds
+                        if (Math.floor(currentTime) % 10 === 0 && currentTime > 0) {
+                          try {
+                            await authAPI.updateVideoProgress(selectedContent.item.id, {
+                              current_time: currentTime,
+                              duration: duration,
+                              completed: false
+                            });
+                          } catch (err) {
+                            console.warn('Failed to update video progress:', err);
+                          }
+                        }
                       }}
-                      onComplete={() => {
+                      onComplete={async () => {
                         console.log('Video completed');
+                        
+                        // Mark video as completed
+                        try {
+                          await authAPI.updateVideoProgress(selectedContent.item.id, {
+                            current_time: (selectedContent.item as Video).duration ? parseFloat((selectedContent.item as Video).duration!) : 0,
+                            duration: (selectedContent.item as Video).duration ? parseFloat((selectedContent.item as Video).duration!) : 0,
+                            completed: true
+                          });
+                          console.log('✅ Video marked as completed');
+                        } catch (err) {
+                          console.error('❌ Failed to mark video as completed:', err);
+                        }
                       }}
                     />
                   ) : (

@@ -190,17 +190,31 @@ class CourseViewSet(viewsets.ModelViewSet):
         
         total_courses = enrolled_courses.count()
         
-        # Calculate total materials (PDFs) across all enrolled courses
-        total_materials = LessonPDF.objects.filter(
+        # Calculate total materials (PDFs + Videos) across all enrolled courses
+        total_pdfs = LessonPDF.objects.filter(
             lesson__course__in=enrolled_courses
         ).count()
         
-        # Calculate completed materials
-        completed_materials = LessonProgress.objects.filter(
+        total_videos = LessonVideo.objects.filter(
+            lesson__course__in=enrolled_courses
+        ).count()
+        
+        total_materials = total_pdfs + total_videos
+        
+        # Calculate completed materials (PDFs + Videos)
+        completed_pdfs = LessonProgress.objects.filter(
             user=user,
             lesson_pdf__lesson__course__in=enrolled_courses,
             is_completed=True
         ).count()
+        
+        completed_videos = LessonProgress.objects.filter(
+            user=user,
+            lesson_video__lesson__course__in=enrolled_courses,
+            is_completed=True
+        ).count()
+        
+        completed_materials = completed_pdfs + completed_videos
         
         # Calculate overall progress percentage
         overall_progress = 0
@@ -210,16 +224,27 @@ class CourseViewSet(viewsets.ModelViewSet):
         # Get courses with detailed progress
         courses_with_progress = []
         for course in enrolled_courses:
-            # Get course PDFs
+            # Get course materials (PDFs + Videos)
             course_pdfs = LessonPDF.objects.filter(lesson__course=course)
-            course_total = course_pdfs.count()
+            course_videos = LessonVideo.objects.filter(lesson__course=course)
+            course_total_pdfs = course_pdfs.count()
+            course_total_videos = course_videos.count()
+            course_total = course_total_pdfs + course_total_videos
             
-            # Get completed PDFs for this course
-            course_completed = LessonProgress.objects.filter(
+            # Get completed materials for this course (PDFs + Videos)
+            course_completed_pdfs = LessonProgress.objects.filter(
                 user=user,
                 lesson_pdf__in=course_pdfs,
                 is_completed=True
             ).count()
+            
+            course_completed_videos = LessonProgress.objects.filter(
+                user=user,
+                lesson_video__in=course_videos,
+                is_completed=True
+            ).count()
+            
+            course_completed = course_completed_pdfs + course_completed_videos
             
             # Calculate course progress
             course_progress = 0
@@ -243,13 +268,22 @@ class CourseViewSet(viewsets.ModelViewSet):
                 'lesson_count': course_total,
                 'completed_lessons': course_completed,
                 'progress_percentage': course_progress,
-                'pdfCount': course_total
+                'total_pdfs': course_total_pdfs,
+                'total_videos': course_total_videos,
+                'completed_pdfs': course_completed_pdfs,
+                'completed_videos': course_completed_videos,
+                'pdfCount': course_total_pdfs,  # Legacy field for backward compatibility
+                'videoCount': course_total_videos
             })
         
         return Response({
             'total_courses': total_courses,
             'total_materials': total_materials,
+            'total_pdfs': total_pdfs,
+            'total_videos': total_videos,
             'completed_materials': completed_materials,
+            'completed_pdfs': completed_pdfs,
+            'completed_videos': completed_videos,
             'overall_progress': overall_progress,
             'courses': courses_with_progress
         })
@@ -525,3 +559,198 @@ class LessonVideoViewSet(viewsets.ModelViewSet):
             'video_title': video.title,
             'course_progress': course_progress.progress_percentage
         })
+
+
+# MCQ API Views
+from .models import MCQQuestion, MCQOption, MCQAttempt, MCQProgress
+from .mcq_serializers import (
+    MCQQuestionSerializer, MCQAnswerSubmissionSerializer, 
+    MCQAttemptSerializer, MCQProgressSerializer, MCQResultsSerializer,
+    MCQBulkAnswerSubmissionSerializer, MCQQuestionDetailSerializer
+)
+
+class MCQQuestionViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for MCQ questions - read only for students"""
+    queryset = MCQQuestion.objects.all()
+    serializer_class = MCQQuestionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Filter questions by lesson if lesson parameter is provided"""
+        queryset = super().get_queryset()
+        lesson_id = self.request.query_params.get('lesson', None)
+        
+        if lesson_id:
+            try:
+                lesson_id = int(lesson_id)
+                # Verify user is enrolled in the course
+                lesson = Lesson.objects.get(id=lesson_id)
+                if not Enrollment.objects.filter(user=self.request.user, course=lesson.course).exists():
+                    raise exceptions.PermissionDenied("You are not enrolled in this course.")
+                
+                queryset = queryset.filter(lesson_id=lesson_id).order_by('order')
+            except (ValueError, Lesson.DoesNotExist):
+                return MCQQuestion.objects.none()
+        
+        return queryset
+    
+    def get_serializer_class(self):
+        """Use detailed serializer for individual question retrieval"""
+        if self.action == 'retrieve':
+            return MCQQuestionDetailSerializer
+        return MCQQuestionSerializer
+    
+    @action(detail=False, methods=['post'])
+    def submit_answer(self, request):
+        """Submit an answer to an MCQ question"""
+        serializer = MCQAnswerSubmissionSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Verify user is enrolled in the course
+            question = serializer.context['question']
+            if not Enrollment.objects.filter(user=request.user, course=question.lesson.course).exists():
+                raise exceptions.PermissionDenied("You are not enrolled in this course.")
+            
+            attempt = serializer.save(user=request.user)
+            
+            # Return the attempt with correct answer information
+            attempt_serializer = MCQAttemptSerializer(attempt)
+            
+            return Response({
+                'success': True,
+                'attempt': attempt_serializer.data,
+                'message': 'Answer submitted successfully'
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @action(detail=False, methods=['post'])
+    def submit_multiple_answers(self, request):
+        """Submit answers to multiple MCQ questions at once"""
+        serializer = MCQBulkAnswerSubmissionSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            attempts = serializer.save(user=request.user)
+            
+            # Get the lesson from the first question
+            lesson = attempts[0].question.lesson if attempts else None
+            
+            # Get updated progress
+            if lesson:
+                progress = MCQProgress.objects.filter(user=request.user, lesson=lesson).first()
+                progress_data = MCQProgressSerializer(progress).data if progress else None
+            else:
+                progress_data = None
+            
+            attempts_data = MCQAttemptSerializer(attempts, many=True).data
+            
+            return Response({
+                'success': True,
+                'attempts': attempts_data,
+                'progress': progress_data,
+                'message': f'Successfully submitted {len(attempts)} answers'
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MCQProgressViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for MCQ progress tracking"""
+    queryset = MCQProgress.objects.all()
+    serializer_class = MCQProgressSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return progress for the authenticated user"""
+        return MCQProgress.objects.filter(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def lesson_results(self, request):
+        """Get detailed results for a specific lesson"""
+        lesson_id = request.query_params.get('lesson_id')
+        
+        if not lesson_id:
+            return Response(
+                {'error': 'lesson_id parameter is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            lesson_id = int(lesson_id)
+            lesson = Lesson.objects.get(id=lesson_id)
+            
+            # Verify user is enrolled
+            if not Enrollment.objects.filter(user=request.user, course=lesson.course).exists():
+                raise exceptions.PermissionDenied("You are not enrolled in this course.")
+            
+            # Get or create progress
+            progress, created = MCQProgress.objects.get_or_create(
+                user=request.user,
+                lesson=lesson
+            )
+            
+            if created:
+                progress.calculate_progress()
+            
+            # Get all attempts for this lesson
+            attempts = MCQAttempt.objects.filter(
+                user=request.user,
+                question__lesson=lesson
+            ).order_by('question__order', '-attempted_at')
+            
+            # Get unique attempts (latest for each question)
+            latest_attempts = {}
+            for attempt in attempts:
+                if attempt.question.id not in latest_attempts:
+                    latest_attempts[attempt.question.id] = attempt
+            
+            results_data = {
+                'lesson_id': lesson.id,
+                'lesson_title': lesson.title,
+                'total_questions': progress.total_questions,
+                'questions_attempted': progress.questions_attempted,
+                'questions_correct': progress.questions_correct,
+                'total_points_possible': progress.total_points_possible,
+                'total_points_earned': progress.total_points_earned,
+                'completion_percentage': progress.completion_percentage,
+                'score_percentage': progress.score_percentage,
+                'is_completed': progress.is_completed,
+                'attempts': MCQAttemptSerializer(list(latest_attempts.values()), many=True).data
+            }
+            
+            return Response(results_data)
+            
+        except (ValueError, Lesson.DoesNotExist):
+            return Response(
+                {'error': 'Invalid lesson_id'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class MCQAttemptViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for viewing MCQ attempts"""
+    queryset = MCQAttempt.objects.all()
+    serializer_class = MCQAttemptSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return attempts for the authenticated user"""
+        queryset = MCQAttempt.objects.filter(user=self.request.user)
+        
+        # Filter by question if provided
+        question_id = self.request.query_params.get('question_id')
+        if question_id:
+            try:
+                queryset = queryset.filter(question_id=int(question_id))
+            except ValueError:
+                return MCQAttempt.objects.none()
+        
+        # Filter by lesson if provided
+        lesson_id = self.request.query_params.get('lesson_id')
+        if lesson_id:
+            try:
+                queryset = queryset.filter(question__lesson_id=int(lesson_id))
+            except ValueError:
+                return MCQAttempt.objects.none()
+        
+        return queryset.order_by('-attempted_at')
